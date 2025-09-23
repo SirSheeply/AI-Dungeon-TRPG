@@ -1,25 +1,16 @@
+/*
+THIS is a sandbox area for testing, debugging, experimenting, and developing code blocks.
 
-// Checkout the Guidebook examples to get an idea of other ways you can use scripting
-// https://help.aidungeon.com/scripting
-
-// Any functions or variables you define here will be available in your other modifier scripts.
+// Checkout the Guidebook examples to get an idea of other ways you can use scripting:
+// https://help.aidungeon.com/scripting or ~/documents/scripting.md in this project
+*/
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 ///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////// CONSTANTS /////////////////////////////////////////////////////////
 
-// Regex
-const diceRegex = (/^(\d+)?d\d+([+-]\d+)?$/i);              // Checks for dice formatted string d20, 1d8, 1d8+1, etc
-const hasRegex = (/(?:^|\s)#\w+/);                          // Check if there's a '#' at the start of any word (not mid-word)
-const inputRegex = (/^(.*?)\s*#(\w+)([^.]*)\.?\s*(.*)$/s);  // Match: actor, #command, arguments (until .), flavor
-const parenthesesWholeRegex = (/\(.*?\)/g);                 // Matches whole (parentheses)
-const parenthesesInnerRegex = (/\((.*?)\)/g);               // Matches parentheses content
-const asterisksQuestionRegex = (/[*?]$/);                   // Matches if a string ends with '*' or '?'
-const matchSpaceRegex = (/\s+/);                            // Matches one or more whitespace characters
-const matchNumberRegex = (/^\d+$/);                         // Matches a string that is entirely a number (digits only)
-
-// Lookups
+const diceRegex = /^(\d+)?d\d+([+-]\d+)?$/i;
 const advantageNames = ["normal", "advantage", "disadvantage"]
 const difficultyScale = {
   "impossible": 30,
@@ -34,98 +25,10 @@ const difficultyScale = {
   "auto": 0
 }
 
-// Prepositions Phrases
-const leadingArticles = ["a", "an", "the"];
-const tailingArticles = ["from", "to", "on", "in", "at", "with"];
-
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 ///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////// INITIALIZER ////////////////////////////////////////////////////////
-
-function AIDungeonTRPG_initialize() {
-  if(!state.TRPG) {
-    state.TRPG = {}
-    state.TRPG.showOutput = true
-    state.TRPG.outputText = ""
-    state.TRPG.prefixText = ""
-    state.TRPG.postfixText = ""
-  }
-}
-
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 ///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////// COMMAD REGISTRY //////////////////////////////////////////////////////
-
-function commandRegistry(commandName) {
-  const registry = [
-    // <><> Core Commands
-    { handler: doHelp,              helpText: doHelpHelp,             synonyms: ["help"],     args: [] }
-  ]
-
-  // Handles searching of the command registry if needed
-  if (!commandName) return registry;
-  for (let entry of registry) {
-    if (entry.synonyms.some(s => s === commandName || s + "s" === commandName)) {
-      return entry;
-    }
-  }
-  return null
-}
-
-function commandExtract(rawText) {
-  // Match: actor, #command, arguments (until .), flavor
-  const match = rawText.match(inputRegex);
-
-  if (!match) return [null, null, null, null, null];
-
-  const actorText = match[1].trim();
-  const commandName = match[2].trim();
-  let argumentText = match[3].trim();
-  const flavorText = match[4].trim();
-
-  // Extract all parentheticals; Merge multiple () blocks into a single string
-  const metaMatches = [...argumentText.matchAll(parenthesesInnerRegex)].map(m => m[1].trim());
-  const metaText = metaMatches.join(" ").trim() || null;
-  argumentText = argumentText.replace(parenthesesWholeRegex, "").trim(); // Remove parentheticals
-  
-  return {actorText, commandName, argumentText, flavorText, metaText, rawText};
-}
-
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////// STORY CARDS ////////////////////////////////////////////////////////
-
-function searchStoryCards({ type = null, title = null, exactType = true, exactTitle = true } = {}) {
-  if (storyCards.length < 1) return [];
-
-  const normalizedType = type ? type.toLowerCase() : null;
-  const normalizedTitle = title ? title.toLowerCase() : null;
-
-  return storyCards.filter(card => {
-    let typeMatch = true;
-    let titleMatch = true;
-
-    if (normalizedType) {
-      const cardType = card.type.toLowerCase();
-      typeMatch = exactType ? (cardType === normalizedType) : cardType.includes(normalizedType);
-    }
-
-    if (normalizedTitle) {
-      const cardTitle = card.title.toLowerCase();
-      titleMatch = exactTitle ? (cardTitle === normalizedTitle) : cardTitle.includes(normalizedTitle);
-    }
-
-    return typeMatch && titleMatch;
-  });
-}
-
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////// ARGS PARSER ////////////////////////////////////////////////////////
 
 // Helpers for type checks
 const isNumber = (t) => !isNaN(t);
@@ -155,12 +58,46 @@ function guessType(variable) {
   return "string";
 }
 
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
+
+function searchStoryCards({ type = null, title = null, exactType = true, exactTitle = true } = {}) {
+  if (storyCards.length < 1) return [];
+
+  const normalizedType = type ? type.toLowerCase() : null;
+  const normalizedTitle = title ? title.toLowerCase() : null;
+
+  return storyCards.filter(card => {
+    let typeMatch = true;
+    let titleMatch = true;
+
+    if (normalizedType) {
+      const cardType = card.type.toLowerCase();
+      typeMatch = exactType ? (cardType === normalizedType) : cardType.includes(normalizedType);
+    }
+
+    if (normalizedTitle) {
+      const cardTitle = card.title.toLowerCase();
+      titleMatch = exactTitle ? (cardTitle === normalizedTitle) : cardTitle.includes(normalizedTitle);
+    }
+
+    return typeMatch && titleMatch;
+  });
+}
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
+
 function parseArgs(commandEntry, argumentText) {
   if (!commandEntry.args || commandEntry.args.length === 0) return [];
 
   // Normalize arg specs like "spell*", "character?" → { type, required }
   const argSpecs = commandEntry.args.map((spec) => {
-    const specType = spec.replace(asterisksQuestionRegex, "").toLowerCase()
+    const specType = spec.replace(/[*?]$/, "").toLowerCase()
     return {
       type: specType,
       checker: typeCheckers.find(tc => tc.type == specType),
@@ -168,7 +105,7 @@ function parseArgs(commandEntry, argumentText) {
   }});
 
   // Split into tokens, filtering empty strings
-  const tokens = argumentText.split(matchSpaceRegex).map(t => t.trim()).filter(Boolean);
+  const tokens = argumentText.split(/\s+/).map(t => t.trim()).filter(Boolean);
   const results = [];
 
   for (const argDef of argSpecs) {
@@ -259,12 +196,16 @@ function findBestCardMatch(argDef, tokens) {
 // Smarter fallback for item names
 function fallbackItemExtraction(tokens, rawText) {
   // 1. If first token is a number, separate it
-  if (matchNumberRegex.test(tokens[0])) {
+  if (/^\d+$/.test(tokens[0])) {
     return tokens.slice(1).join(" ")
   }
 
-  // 2. Otherwise, trim off trailing/leading prepositions/phrases
-  const words = rawText.split(matchSpaceRegex);
+  // 2. Otherwise, trim off trailing prepositions/phrases
+  const leadingArticles = ["a", "an", "the"];
+  const stopWords = ["from", "to", "on", "in", "at", "with"];
+  const words = rawText.split(/\s+/);
+
+  // Trim leading articles
   while (words.length && leadingArticles.includes(words[0].toLowerCase())) {
     words.shift();
   }
@@ -272,7 +213,7 @@ function fallbackItemExtraction(tokens, rawText) {
   // Trim trailing stop words
   let cutoff = words.length;
   for (let i = 0; i < words.length; i++) {
-    if (tailingArticles.includes(words[i].toLowerCase())) {
+    if (stopWords.includes(words[i].toLowerCase())) {
       cutoff = i; // stop before preposition
       break;
     }
@@ -284,7 +225,7 @@ function fallbackItemExtraction(tokens, rawText) {
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 ///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////// TEXT MANIPULATION //////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
 
 function singularize(word, makeSingle = true) {
   if (!word || typeof word !== 'string') return word;
@@ -387,30 +328,47 @@ function singularize(word, makeSingle = true) {
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 ///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////// CORE COMMANDS ///////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
 
-function allCommandsHelp() {
-  let textBuilder = "This is a list of all commands, and their synonyms:\n\n"
-  for (let entry of commandRegistry()) {
-    textBuilder += `#${entry.synonyms[0]}\n[${entry.synonyms.join(", ")}]\n\n`
-  }
-  textBuilder += "You can use #help followed by a command name for specific info; e.g. '#help help'.\n\n"
-  return textBuilder
+const storyCards = []
+storyCards.push({title:"fireball", type:"spell"})
+storyCards.push({title:"goblin", type:"character"})
+storyCards.push({title:"orange", type:"item"})
+
+const registry = [
+    // <><> Core Commands
+    { handler: "doTry",     helpText: "doTryHelp",      synonyms: ["try", "tries"],       args: ["skill*"] },
+    { handler: "doCast",    helpText: "doCastHelp",     synonyms: ["cast", "activate"],   args: ["spell*", "number?", "character?"] },
+    { handler: "doAttack",  helpText: "doAttackHelp",   synonyms: ["attack"],             args: ["item?", "character?"] },
+
+    // <><> Item Commands
+    { handler: "doTrade",    helpText: "doTradeHelp",   synonyms: ["buy", "sell", "trade"],   args: ["item*", "number?", "item*", "number?"] },
+    { handler: "doDrop",     helpText: "doDropHelp",    synonyms: ["drop", "remove"],         args: ["item*", "number?"] },
+    { handler: "doTake",     helpText: "doTakeHelp",    synonyms: ["take", "pocket"],         args: ["item*", "number?"] }
+]
+
+const argumentText1 = "a magic spell at the goblin, sending a lvl 1 fireball at it's head"
+const argumentText2 = "fireball at level 1 at the goblin"
+const argumentText3 = "fireball at the goblin"
+const argumentText4 = "fireball at the skeleton"
+const argumentText5 = "a spell"
+
+const argumentText6 = "the orange"
+const argumentText7 = "10 oranges"
+const argumentText8 = "a sword"
+const argumentText9 = "sean's sword from the desk."
+
+try {
+  console.log(parseArgs(registry[1], argumentText1));
+  console.log(parseArgs(registry[1], argumentText2));
+  console.log(parseArgs(registry[1], argumentText3));
+  console.log(parseArgs(registry[1], argumentText4));
+  // console.log(parseArgs(registry[0], argumentText5));
+  console.log("\n")
+  console.log(parseArgs(registry[5], argumentText6));
+  console.log(parseArgs(registry[5], argumentText7));
+  console.log(parseArgs(registry[5], argumentText8));
+  console.log(parseArgs(registry[5], argumentText9));
+} catch (e) {
+  console.error(e.message);
 }
-
-function doHelp(commandInput) {
-  const helpType = commandInput.argumentText
-  const cmdEntry = commandRegistry(helpType)
-  if (helpType != "" && cmdEntry != null) {
-    state.TRPG.outputText = `${cmdEntry.helpText}\nSynonyms: [${cmdEntry.synonyms.join(", ")}]`
-  } else {
-    state.TRPG.outputText = allCommandsHelp()
-  }
-  return [null, true]
-}
-
-const doHelpHelp = `<><> #help command
--- Displays help information for a specific command.
--- OR synonym list for all commands, if none specified.
--- I see you're already a master of the help command ;)
-Usage: #help (command)\n`
