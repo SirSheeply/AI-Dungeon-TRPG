@@ -23,7 +23,7 @@ function AIDungeonTRPG_output(text, stop=false) {
   // Disables output
   if(state.TRPG.showOutput == false) {
     clearState()
-    return ["", stop]
+    return [" ", stop]
   }
 
   // Replaces AI Dungeon output

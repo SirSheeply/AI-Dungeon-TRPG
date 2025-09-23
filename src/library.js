@@ -9,6 +9,9 @@
 ///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////// CONSTANTS /////////////////////////////////////////////////////////
 
+// Constants
+const AIDungeonTRPGCardType = "AIDungeonTRPG"
+
 // Regex
 const diceRegex = (/^(\d+)?d\d+([+-]\d+)?$/i);              // Checks for dice formatted string d20, 1d8, 1d8+1, etc
 const hasRegex = (/(?:^|\s)#\w+/);                          // Check if there's a '#' at the start of any word (not mid-word)
@@ -61,7 +64,12 @@ function AIDungeonTRPG_initialize() {
 function commandRegistry(commandName) {
   const registry = [
     // <><> Core Commands
-    { handler: doHelp,              helpText: doHelpHelp,             synonyms: ["help"],     args: [] }
+    { handler: doHelp,                 helpText: doHelpHelp,                synonyms: ["help"],        args: [] },
+    { handler: doReset,                helpText: doResetHelp,               synonyms: ["reset"],       args: [] },
+
+    // <><> Char Commands
+    { handler: doNewChar,              helpText: doNewCharHelp,             synonyms: ["newchar"],     args: [] },
+    { handler: doDeleteChar,           helpText: doDeleteCharHelp,          synonyms: ["delchar"],     args: [] }
   ]
 
   // Handles searching of the command registry if needed
@@ -76,6 +84,7 @@ function commandRegistry(commandName) {
 
 function commandExtract(rawText) {
   // Match: actor, #command, arguments (until .), flavor
+  rawText = rawText.replace("> ", "");
   const match = rawText.match(inputRegex);
 
   if (!match) return [null, null, null, null, null];
@@ -414,3 +423,132 @@ const doHelpHelp = `<><> #help command
 -- OR synonym list for all commands, if none specified.
 -- I see you're already a master of the help command ;)
 Usage: #help (command)\n`
+
+function doReset(commandInput) {
+  state.TRPG = null
+  return ["AIDungeonTRPG has been reset!", false]
+}
+
+const doResetHelp = `<><> #reset command
+-- DANGER! This will delete all AIDungeonTRPG state data.
+-- Story cards will not be impacted.
+Usage: #reset\n`
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////// CHARACTER COMMANDS /////////////////////////////////////////////////////
+
+function characterTemplate(name) {
+  // Base info
+  const blankCharacter = {
+    info: {
+      name: name.trim(),
+      class: "Adventurer"
+    }
+  };
+
+  // Helper to load a definition card and build a section
+  function loadSection(sectionTitle) {
+    const cards = searchStoryCards({ type: AIDungeonTRPGCardType, title: sectionTitle, exactType: true, exactTitle: true });
+    if (cards.length === 0) {
+      throw new Error(`${sectionTitle} card does not exist!`);
+    }
+    try {
+      const definition = JSON.parse(cards[0].description);
+      blankCharacter[sectionTitle] = {};
+      for (const key in definition) {
+        blankCharacter[sectionTitle][key] = definition[key].baseValue;
+      }
+    } catch {
+      throw new Error(`${sectionTitle} card entry is invalid JSON!`);
+    }
+  }
+
+  // Add attributes + skills
+  loadSection("attributes");
+  loadSection("skills");
+
+  return blankCharacter;
+}
+
+function loadCharacter(name) {
+  const character = characterTemplate(name)
+  for (const sectionKey in character) {
+    const searchTitle = name + " - " + sectionKey
+    const cards = searchStoryCards({title: searchTitle, exactTitle: true})
+    if (cards.length <= 0) throw new Error(`Error: Missing character ${sectionKey} card for ${name}`)
+    try {
+      character[sectionKey] = JSON.parse(cards[0].description);
+    } catch {
+      throw new Error(`${sectionTitle} card entry is invalid JSON!`)
+    }
+  }
+  return character
+}
+
+function updateCharacter(character) {
+  for (const sectionKey of Object.keys(character)) {
+    const cardName = `${character.info.name} - ${sectionKey}`
+    const cardIndex = storyCards.findIndex(item => item.title === cardName);
+    if (cardIndex < 0) throw new Error(`Error: Missing character ${sectionKey} card for ${character.info.name}`)
+    const cardContent = JSON.stringify(character[sectionKey], null, 2);
+    updateStoryCard(cardIndex, "", "", `${AIDungeonTRPGCardType} - Character`, cardName, cardContent);
+  }
+}
+
+function doNewChar(commandInput) {
+  // Validate character name
+  const name = commandInput.actorText?.trim();
+  if (!name) throw new Error("Error: No character name detected!");
+
+  // Setup new character template
+  const newCharacter = characterTemplate(name);
+
+  // Prevent duplicates
+  for (const sectionKey of Object.keys(newCharacter)) {
+    if (isCharacter(`${name} - ${sectionKey}`)) {
+      throw new Error(`Error: Character ${sectionKey} already exists!`);
+    }
+  }
+
+  // Create story cards
+  for (const sectionKey of Object.keys(newCharacter)) {
+    const cardName = `${name} - ${sectionKey}`;
+    const cardContent = JSON.stringify(newCharacter[sectionKey], null, 2);
+    addStoryCard("", "", `${AIDungeonTRPGCardType} - Character`, cardName, cardContent);
+  }
+
+  return [`Character '${name}' has been created!`, false];
+}
+
+const doNewCharHelp = `<><> #newChar command
+-- Creates a new blank character with story cards.
+Usage: character_name #newChar\n`
+
+function doDeleteChar(commandInput) {
+  // Check for a valid character name
+  const name = commandInput.actorText?.trim();
+  if (!name) throw new Error("Error: No character name detected!");
+
+  // Setup new character template
+  const newCharacter = characterTemplate(name)
+
+  // Check that character cards do not exist
+  for (const sectionKey in newCharacter) {
+    const searchTitle = `${name} - ${sectionKey}`
+    const cardIndex = storyCards.findIndex(item => item.title === searchTitle);
+    if (cardIndex >= 0) removeStoryCard(cardIndex)
+  }
+
+  return [`Character '${name}' has been deleted!`, false]
+}
+
+const doDeleteCharHelp = `<><> #delChar command
+-- Deletes a character's story cards.
+Usage: character_name #delChar\n`
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////

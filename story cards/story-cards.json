@@ -1,9 +1,17 @@
 [
   {
     "keys": "",
-    "value": "",
-    "type": "",
-    "title": "",
+    "value": "{\n    \"Strength\":         { \"attribute\": \"Vigor\", \"baseValue\": 0},\n    \"Constitution\":     { \"attribute\": \"Vigor\", \"baseValue\": 0},\n    \"Athletics\":        { \"attribute\": \"Vigor\", \"baseValue\": 0},\n    \"Block\":            { \"attribute\": \"Vigor\", \"baseValue\": 0},\n    \n    \"Dexterity\":        { \"attribute\": \"Finesse\", \"baseValue\": 0},\n    \"Accuracy\":         { \"attribute\": \"Finesse\", \"baseValue\": 0},\n    \"Crafting\":         { \"attribute\": \"Finesse\", \"baseValue\": 0},\n    \"Parry\":            { \"attribute\": \"Finesse\", \"baseValue\": 0},\n    \n    \"Acrobatics\":       { \"attribute\": \"Agility\", \"baseValue\": 0},\n    \"Stealth\":          { \"attribute\": \"Agility\", \"baseValue\": 0},\n    \"Dodge\":            { \"attribute\": \"Agility\", \"baseValue\": 0},\n    \n    \"Arcana\":           { \"attribute\": \"Intellect\", \"baseValue\": 0},\n    \"Science\":          { \"attribute\": \"Intellect\", \"baseValue\": 0},\n    \"History\":          { \"attribute\": \"Intellect\", \"baseValue\": 0},\n    \"Medicine\":         { \"attribute\": \"Intellect\", \"baseValue\": 0},\n    \"Theology\":         { \"attribute\": \"Intellect\", \"baseValue\": 0},    \n    \n    \"Willpower\":        { \"attribute\": \"Spirit\", \"baseValue\": 0},\n    \"Clairvoyance\":     { \"attribute\": \"Spirit\", \"baseValue\": 0},\n    \"Channeling\":       { \"attribute\": \"Spirit\", \"baseValue\": 0},\n    \n    \"Insight\":          { \"attribute\": \"Intuition\", \"baseValue\": 0},\n    \"Perception\":       { \"attribute\": \"Intuition\", \"baseValue\": 0},\n    \"Survival\":         { \"attribute\": \"Intuition\", \"baseValue\": 0},\n    \n    \"Deception\":        { \"attribute\": \"Charisma\", \"baseValue\": 0},\n    \"Intimidation\":     { \"attribute\": \"Charisma\", \"baseValue\": 0},\n    \"Performance\":      { \"attribute\": \"Charisma\", \"baseValue\": 0},\n    \"Persuasion\":       { \"attribute\": \"Charisma\", \"baseValue\": 0}\n}",
+    "type": "AIDungeonTRPG",
+    "title": "Skills",
+    "description": "",
+    "useForCharacterCreation": false
+  },
+  {
+    "keys": "",
+    "value": "{\n    \"Vigor\": { \"baseValue\": 10 },\n    \"Finesse\": { \"baseValue\": 10 },\n    \"Agility\": { \"baseValue\": 10 },\n    \"Intellect\": { \"baseValue\": 10 },\n    \"Spirit\": { \"baseValue\": 10 },\n    \"Intuition\": { \"baseValue\": 10 },\n    \"Charisma\": { \"baseValue\": 10 }\n}",
+    "type": "AIDungeonTRPG",
+    "title": "Attributes",
     "description": "",
     "useForCharacterCreation": false
   }
