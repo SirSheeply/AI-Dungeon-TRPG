@@ -10,7 +10,20 @@ THIS is a sandbox area for testing, debugging, experimenting, and developing cod
 ///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////// CONSTANTS /////////////////////////////////////////////////////////
 
-const diceRegex = /^(\d+)?d\d+([+-]\d+)?$/i;
+// Constants
+const AIDungeonTRPGCardType = "AIDungeonTRPG"
+
+// Regex
+const diceRegex = (/^(\d+)?d\d+([+-]\d+)?$/i);              // Checks for dice formatted string d20, 1d8, 1d8+1, etc
+const hasRegex = (/(?:^|\s)#\w+/);                          // Check if there's a '#' at the start of any word (not mid-word)
+const inputRegex = (/^(.*?)\s*#(\w+)([^.]*)\.?\s*(.*)$/s);  // Match: actor, #command, arguments (until .), flavor
+const parenthesesWholeRegex = (/\(.*?\)/g);                 // Matches whole (parentheses)
+const parenthesesInnerRegex = (/\((.*?)\)/g);               // Matches parentheses content
+const asterisksQuestionRegex = (/[*?]$/);                   // Matches if a string ends with '*' or '?'
+const matchSpaceRegex = (/\s+/);                            // Matches one or more whitespace characters
+const matchNumberRegex = (/^\d+$/);                         // Matches a string that is entirely a number (digits only)
+
+// Lookups
 const advantageNames = ["normal", "advantage", "disadvantage"]
 const difficultyScale = {
   "impossible": 30,
@@ -25,10 +38,84 @@ const difficultyScale = {
   "auto": 0
 }
 
+// Prepositions Phrases
+const leadingArticles = ["a", "an", "the"];
+const tailingArticles = ["from", "to", "on", "in", "at", "with"];
+
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 ///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////// COMMANDS REGISTRY /////////////////////////////////////////////////////
+
+function commandRegistry(commandName) {
+  const registry = [
+    // <><> Game Commands
+    { handler: doTry, helpText: doTryHelp, synonyms: ["try", "tries", "attempt", "attempts"], args: [] },
+  ]
+
+  // Handles searching of the command registry if needed
+  if (!commandName) return registry;
+  for (let entry of registry) {
+    if (entry.synonyms.some(s => s === commandName || s + "s" === commandName)) {
+      return entry;
+    }
+  }
+  return null
+}
+
+function commandExtract(rawText) {
+  // Match: actor, #command, arguments (until .), flavor
+  rawText = rawText.replace("> ", "");
+  const match = rawText.match(inputRegex);
+
+  if (!match) return [null, null, null, null, null];
+
+  const actorText = match[1].trim();
+  const commandName = match[2].trim();
+  let argumentText = match[3].trim();
+  const flavorText = match[4].trim();
+
+  // Extract all parentheticals; Merge multiple () blocks into a single string
+  const metaMatches = [...argumentText.matchAll(parenthesesInnerRegex)].map(m => m[1].trim());
+  const metaText = metaMatches.join(" ").trim() || null;
+  argumentText = argumentText.replace(parenthesesWholeRegex, "").trim(); // Remove parentheticals
+  
+  return {actorText, commandName, argumentText, flavorText, metaText, rawText};
+}
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 ///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////// STORY CARDS ////////////////////////////////////////////////////////
+
+function searchStoryCards({ type = null, title = null, exactType = true, exactTitle = true } = {}) {
+  if (storyCards.length < 1) return [];
+
+  const normalizedType = type ? type.toLowerCase() : null;
+  const normalizedTitle = title ? title.toLowerCase() : null;
+
+  return storyCards.filter(card => {
+    let typeMatch = true;
+    let titleMatch = true;
+
+    if (normalizedType) {
+      const cardType = card.type.toLowerCase();
+      typeMatch = exactType ? (cardType === normalizedType) : cardType.includes(normalizedType);
+    }
+
+    if (normalizedTitle) {
+      const cardTitle = card.title.toLowerCase();
+      titleMatch = exactTitle ? (cardTitle === normalizedTitle) : cardTitle.includes(normalizedTitle);
+    }
+
+    return typeMatch && titleMatch;
+  });
+}
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////// ARGS PARSER ////////////////////////////////////////////////////////
 
 // Helpers for type checks
 const isNumber = (t) => !isNaN(t);
@@ -58,46 +145,12 @@ function guessType(variable) {
   return "string";
 }
 
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
-
-function searchStoryCards({ type = null, title = null, exactType = true, exactTitle = true } = {}) {
-  if (storyCards.length < 1) return [];
-
-  const normalizedType = type ? type.toLowerCase() : null;
-  const normalizedTitle = title ? title.toLowerCase() : null;
-
-  return storyCards.filter(card => {
-    let typeMatch = true;
-    let titleMatch = true;
-
-    if (normalizedType) {
-      const cardType = card.type.toLowerCase();
-      typeMatch = exactType ? (cardType === normalizedType) : cardType.includes(normalizedType);
-    }
-
-    if (normalizedTitle) {
-      const cardTitle = card.title.toLowerCase();
-      titleMatch = exactTitle ? (cardTitle === normalizedTitle) : cardTitle.includes(normalizedTitle);
-    }
-
-    return typeMatch && titleMatch;
-  });
-}
-
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
-
 function parseArgs(commandEntry, argumentText) {
   if (!commandEntry.args || commandEntry.args.length === 0) return [];
 
   // Normalize arg specs like "spell*", "character?" → { type, required }
   const argSpecs = commandEntry.args.map((spec) => {
-    const specType = spec.replace(/[*?]$/, "").toLowerCase()
+    const specType = spec.replace(asterisksQuestionRegex, "").toLowerCase()
     return {
       type: specType,
       checker: typeCheckers.find(tc => tc.type == specType),
@@ -105,7 +158,7 @@ function parseArgs(commandEntry, argumentText) {
   }});
 
   // Split into tokens, filtering empty strings
-  const tokens = argumentText.split(/\s+/).map(t => t.trim()).filter(Boolean);
+  const tokens = argumentText.split(matchSpaceRegex).map(t => t.trim()).filter(Boolean);
   const results = [];
 
   for (const argDef of argSpecs) {
@@ -196,16 +249,12 @@ function findBestCardMatch(argDef, tokens) {
 // Smarter fallback for item names
 function fallbackItemExtraction(tokens, rawText) {
   // 1. If first token is a number, separate it
-  if (/^\d+$/.test(tokens[0])) {
+  if (matchNumberRegex.test(tokens[0])) {
     return tokens.slice(1).join(" ")
   }
 
-  // 2. Otherwise, trim off trailing prepositions/phrases
-  const leadingArticles = ["a", "an", "the"];
-  const stopWords = ["from", "to", "on", "in", "at", "with"];
-  const words = rawText.split(/\s+/);
-
-  // Trim leading articles
+  // 2. Otherwise, trim off trailing/leading prepositions/phrases
+  const words = rawText.split(matchSpaceRegex);
   while (words.length && leadingArticles.includes(words[0].toLowerCase())) {
     words.shift();
   }
@@ -213,7 +262,7 @@ function fallbackItemExtraction(tokens, rawText) {
   // Trim trailing stop words
   let cutoff = words.length;
   for (let i = 0; i < words.length; i++) {
-    if (stopWords.includes(words[i].toLowerCase())) {
+    if (tailingArticles.includes(words[i].toLowerCase())) {
       cutoff = i; // stop before preposition
       break;
     }
@@ -225,7 +274,7 @@ function fallbackItemExtraction(tokens, rawText) {
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 ///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////// TEXT MANIPULATION //////////////////////////////////////////////////////
 
 function singularize(word, makeSingle = true) {
   if (!word || typeof word !== 'string') return word;
@@ -325,50 +374,113 @@ function singularize(word, makeSingle = true) {
   return word;
 }
 
+
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 ///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////// DEV|CMD //////////////////////////////////////////////////////////
+
+function doTry(commandInput) {
+  // Load the character (or use default for NPC)
+  return [JSON.stringify(commandInput, null, 2), false]
+}
+
+const doTryHelp = `<><> #doTry command
+-- Deletes a character's story cards.
+Usage: you|actor #try\n`
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 ///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////// MOCKS|INPUT ////////////////////////////////////////////////////////
 
-const storyCards = []
-storyCards.push({title:"fireball", type:"spell"})
-storyCards.push({title:"goblin", type:"character"})
-storyCards.push({title:"orange", type:"item"})
+function AIDungeonTRPG_initialize() {
+  if(!state.TRPG) {
+    state.TRPG = {}
+    state.TRPG.showOutput = true
+    state.TRPG.outputText = ""
+    state.TRPG.prefixText = ""
+    state.TRPG.postfixText = ""
+  }
+}
 
-const registry = [
-    // <><> Core Commands
-    { handler: "doTry",     helpText: "doTryHelp",      synonyms: ["try", "tries"],       args: ["skill*"] },
-    { handler: "doCast",    helpText: "doCastHelp",     synonyms: ["cast", "activate"],   args: ["spell*", "number?", "character?"] },
-    { handler: "doAttack",  helpText: "doAttackHelp",   synonyms: ["attack"],             args: ["item?", "character?"] },
+function AIDungeonTRPG_input(text, stop=false) {
+  AIDungeonTRPG_initialize()
+  // No "#" means no command
+  if (!text.match(hasRegex)) {
+    return [text, stop]
+  }
 
-    // <><> Item Commands
-    { handler: "doTrade",    helpText: "doTradeHelp",   synonyms: ["buy", "sell", "trade"],   args: ["item*", "number?", "item*", "number?"] },
-    { handler: "doDrop",     helpText: "doDropHelp",    synonyms: ["drop", "remove"],         args: ["item*", "number?"] },
-    { handler: "doTake",     helpText: "doTakeHelp",    synonyms: ["take", "pocket"],         args: ["item*", "number?"] }
+  try {
+    // Parse text into blocks, then find the command entry
+    const commandInput = commandExtract(text)
+    commandInput.commandEntry = commandRegistry(commandInput.commandName)
+    commandInput.commandArgs = parseArgs(commandInput.commandEntry, commandInput.argumentText)
+
+    // Where showInput replaces input text, and showOutput controls output display
+    let [showInput, showOutput] = commandInput.commandEntry.handler(commandInput)
+    if (showInput) text = showInput + commandInput.flavorText
+    state.TRPG.showOutput = showOutput
+
+  } catch (err) {
+    state.TRPG.showOutput = false
+    return [err.message, stop]
+  }
+  return [text, stop]
+}
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////// MOCK|TEST /////////////////////////////////////////////////////////////
+
+// MOCK AI Dungeon Stats and StoryCards
+const state = {}
+const storyCards = [
+  {
+    "keys": "",
+    "description": "{\n    \"Vigor\": { \"baseValue\": 10 },\n    \"Finesse\": { \"baseValue\": 10 },\n    \"Agility\": { \"baseValue\": 10 },\n    \"Intellect\": { \"baseValue\": 10 },\n    \"Spirit\": { \"baseValue\": 10 },\n    \"Intuition\": { \"baseValue\": 10 },\n    \"Charisma\": { \"baseValue\": 10 }\n}",
+    "type": "AIDungeonTRPG",
+    "title": "Attributes",
+    "entry": ""
+  },
+  {
+    "keys": "",
+    "description": "{\n  \"name\": \"You\",\n  \"class\": \"Adventurer\"\n}",
+    "type": "Character",
+    "title": "You - info",
+    "entry": ""
+  },
+  {
+    "keys": "",
+    "description": "{\n  \"Strength\": 0,\n  \"Constitution\": 0,\n  \"Athletics\": 0,\n  \"Block\": 0,\n  \"Dexterity\": 0,\n  \"Accuracy\": 0,\n  \"Crafting\": 0,\n  \"Parry\": 0,\n  \"Acrobatics\": 0,\n  \"Stealth\": 0,\n  \"Dodge\": 0,\n  \"Arcana\": 0,\n  \"Science\": 0,\n  \"History\": 0,\n  \"Medicine\": 0,\n  \"Theology\": 0,\n  \"Willpower\": 0,\n  \"Clairvoyance\": 0,\n  \"Channeling\": 0,\n  \"Insight\": 0,\n  \"Perception\": 0,\n  \"Survival\": 0,\n  \"Deception\": 0,\n  \"Intimidation\": 0,\n  \"Performance\": 0,\n  \"Persuasion\": 0\n}",
+    "type": "Character",
+    "title": "You - skills",
+    "entry": ""
+  },
+  {
+    "keys": "",
+    "description": "{\n  \"Vigor\": 10,\n  \"Finesse\": 10,\n  \"Agility\": 10,\n  \"Intellect\": 10,\n  \"Spirit\": 10,\n  \"Intuition\": 10,\n  \"Charisma\": 10\n}",
+    "type": "Character",
+    "title": "You - attributes",
+    "entry": ""
+  },
+  {
+    "keys": "",
+    "description": "{\n    \"Strength\":         { \"attribute\": \"Vigor\", \"baseValue\": 0},\n    \"Constitution\":     { \"attribute\": \"Vigor\", \"baseValue\": 0},\n    \"Athletics\":        { \"attribute\": \"Vigor\", \"baseValue\": 0},\n    \"Block\":            { \"attribute\": \"Vigor\", \"baseValue\": 0},\n    \n    \"Dexterity\":        { \"attribute\": \"Finesse\", \"baseValue\": 0},\n    \"Accuracy\":         { \"attribute\": \"Finesse\", \"baseValue\": 0},\n    \"Crafting\":         { \"attribute\": \"Finesse\", \"baseValue\": 0},\n    \"Parry\":            { \"attribute\": \"Finesse\", \"baseValue\": 0},\n    \n    \"Acrobatics\":       { \"attribute\": \"Agility\", \"baseValue\": 0},\n    \"Stealth\":          { \"attribute\": \"Agility\", \"baseValue\": 0},\n    \"Dodge\":            { \"attribute\": \"Agility\", \"baseValue\": 0},\n    \n    \"Arcana\":           { \"attribute\": \"Intellect\", \"baseValue\": 0},\n    \"Science\":          { \"attribute\": \"Intellect\", \"baseValue\": 0},\n    \"History\":          { \"attribute\": \"Intellect\", \"baseValue\": 0},\n    \"Medicine\":         { \"attribute\": \"Intellect\", \"baseValue\": 0},\n    \"Theology\":         { \"attribute\": \"Intellect\", \"baseValue\": 0},    \n    \n    \"Willpower\":        { \"attribute\": \"Spirit\", \"baseValue\": 0},\n    \"Clairvoyance\":     { \"attribute\": \"Spirit\", \"baseValue\": 0},\n    \"Channeling\":       { \"attribute\": \"Spirit\", \"baseValue\": 0},\n    \n    \"Insight\":          { \"attribute\": \"Intuition\", \"baseValue\": 0},\n    \"Perception\":       { \"attribute\": \"Intuition\", \"baseValue\": 0},\n    \"Survival\":         { \"attribute\": \"Intuition\", \"baseValue\": 0},\n    \n    \"Deception\":        { \"attribute\": \"Charisma\", \"baseValue\": 0},\n    \"Intimidation\":     { \"attribute\": \"Charisma\", \"baseValue\": 0},\n    \"Performance\":      { \"attribute\": \"Charisma\", \"baseValue\": 0},\n    \"Persuasion\":       { \"attribute\": \"Charisma\", \"baseValue\": 0}\n}",
+    "type": "AIDungeonTRPG",
+    "title": "Skills",
+    "entry": ""
+  }
 ]
 
-const argumentText1 = "a magic spell at the goblin, sending a lvl 1 fireball at it's head"
-const argumentText2 = "fireball at level 1 at the goblin"
-const argumentText3 = "fireball at the goblin"
-const argumentText4 = "fireball at the skeleton"
-const argumentText5 = "a spell"
+// MOCK player input
+const playerInput1 = "> You #try to swim across the ocean." // Has no skill or attribute, should fail as command
+const playerInput2 = "> You #try to swim using your atheletics." // Has a named skill
+const playerInput3 = "> You #try to swim with great vigor." // Has a named attribute
+const playerInput4 = "> You #try swimming with great vigor." // Alternate wording
 
-const argumentText6 = "the orange"
-const argumentText7 = "10 oranges"
-const argumentText8 = "a sword"
-const argumentText9 = "sean's sword from the desk."
-
-try {
-  console.log(parseArgs(registry[1], argumentText1));
-  console.log(parseArgs(registry[1], argumentText2));
-  console.log(parseArgs(registry[1], argumentText3));
-  console.log(parseArgs(registry[1], argumentText4));
-  // console.log(parseArgs(registry[0], argumentText5));
-  console.log("\n")
-  console.log(parseArgs(registry[5], argumentText6));
-  console.log(parseArgs(registry[5], argumentText7));
-  console.log(parseArgs(registry[5], argumentText8));
-  console.log(parseArgs(registry[5], argumentText9));
-} catch (e) {
-  console.error(e.message);
-}
+console.log(AIDungeonTRPG_input(playerInput1))
+// console.log(AIDungeonTRPG_input(playerInput2))
+// console.log(AIDungeonTRPG_input(playerInput3))
+// console.log(AIDungeonTRPG_input(playerInput4))
