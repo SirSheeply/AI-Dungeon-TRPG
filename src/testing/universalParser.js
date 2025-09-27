@@ -22,6 +22,7 @@ const TRPGCharacterType = `${TRPGCardType} - character`
 const TRPGAttributeType = `${TRPGCardType} - ${attributesKeyword}`
 const TRPGSkillType = `${TRPGCardType} - ${skillsKeyword}`
 const TRPGDifficultyType = `${TRPGCardType} - ${difficultyKeyword}`
+const TRPGItemType = `${TRPGCardType} - item`
 
 // Regex
 const hasRegex = (/(?:^|\s)#\w+/);                          // Check if there's a '#' at the start of any word (not mid-word)
@@ -132,15 +133,16 @@ function getRandomFloat(min, max) {
 function commandRegistry(commandName) {
   const registry = [
     // <><> Core Commands
-    { handler: doHelp,                 helpText: doHelpHelp,                synonyms: ["help"],        args: [] },
-    { handler: doReset,                helpText: doResetHelp,               synonyms: ["reset"],       args: [] },
+    { handler: doHelp,        helpText: doHelpHelp,        args: [],                               synonyms: ["help"]  },
+    { handler: doReset,       helpText: doResetHelp,       args: [],                               synonyms: ["reset"]  },
 
     // <><> Char Commands
-    { handler: doNewChar,              helpText: doNewCharHelp,             synonyms: ["newchar"],     args: [] },
-    { handler: doDeleteChar,           helpText: doDeleteCharHelp,          synonyms: ["delchar"],     args: [] },
+    { handler: doNewChar,     helpText: doNewCharHelp,     args: [],                               synonyms: ["newchar"]  },
+    { handler: doDeleteChar,  helpText: doDeleteCharHelp,  args: [],                               synonyms: ["delchar"]  },
 
     // <><> Game Commands
-    { handler: doTry,                  helpText: doTryHelp,                 synonyms: ["try", "attempt"],     args: ["checkType*attributes|skills"] },
+    { handler: doTry,         helpText: doTryHelp,         args: ["checkType*attributes|skills"],  synonyms: ["try", "attempt"] },
+    { handler: doTake,        helpText: doTakeHelp,        args: ["amount?number", "item*item"],   synonyms: ["take", "steal", "get", "grab", "receive", "pocket", "bag", "stow"] },
   ]
 
   // Handles searching of the command registry if needed
@@ -229,7 +231,7 @@ const isNumber = (t) => !isNaN(t);
 const isVantage = (t) => advantageNames.some(k => k.toLowerCase() === t.toLowerCase());
 const isDC = (t) => Object.keys(state.TRPG.difficultyScale).some(k => k.toLowerCase() === t.toLowerCase());
 const isBoolean = (t) => typeof t === "boolean" || (typeof t === "string" && ["true", "false"].includes(t.toLowerCase()));
-const isItem = (t) => searchStoryCards({ type: "item", title: singularize(t) }).length > 0;
+const isItem = (t) => searchStoryCards({ type: TRPGItemType, title: singularize(t) }).length > 0;
 const isSpell = (t) => searchStoryCards({ type: "spell", title: t }).length > 0;
 const isCharacter = (t) => validateCharacter(t);
 const isAttribute = (t) => Object.keys(state.TRPG.attributes).some(k => k.toLowerCase() === t.toLowerCase());
@@ -274,7 +276,7 @@ function parseArgs(commandArgs, argumentText) {
 
   for (const argDef of argSpecs) {
     // Consume matched tokens if we found a span
-    const { value, matchedCard, matchType, span } = matchArgument(argDef, tokens, argumentText);
+    const { value, matchedCard, matchType, span } = matchArgument(argDef, tokens);
     if (span) tokens.splice(span[0], span[1] - span[0]);
 
     // Enforce required args
@@ -294,7 +296,7 @@ function parseArgs(commandArgs, argumentText) {
 }
 
 // Unified matcher for arguments
-function matchArgument(argDef, tokens, rawText) {
+function matchArgument(argDef, tokens) {
   let value = null;
   let matchedCard = null;
   let matchType = null;
@@ -329,7 +331,7 @@ function matchArgument(argDef, tokens, rawText) {
 
     // 3) Fallback for items
     if (!value && checker.fallback) {
-      const fallback = fallbackItemExtraction(tokens, rawText);
+      const fallback = fallbackItemExtraction(tokens);
       if (fallback) {
         value = fallback;
         const idx = tokens.findIndex(
@@ -340,7 +342,7 @@ function matchArgument(argDef, tokens, rawText) {
       }
     }
   }
-
+  
   return { value, matchedCard, matchType, span };
 }
 
@@ -367,28 +369,29 @@ function findBestCardMatch(type, checker, tokens) {
 }
 
 // Smarter fallback for item names
-function fallbackItemExtraction(tokens, rawText) {
-  // 1. If first token is a number, separate it
-  if (matchNumberRegex.test(tokens[0])) {
-    return tokens.slice(1).join(" ")
+function fallbackItemExtraction(tokens) {
+  let words = [...tokens]; // default to cleaned tokens
+
+  // 1. If first token is a number, drop it
+  if (matchNumberRegex.test(words[0])) {
+    words.shift();
   }
 
-  // 2. Otherwise, trim off trailing/leading prepositions/phrases
-  const words = rawText.split(matchSpaceRegex);
+  // 2. Remove leading articles
   while (words.length && leadingArticles.includes(words[0].toLowerCase())) {
     words.shift();
   }
 
-  // Trim trailing stop words
+  // 3. Remove trailing prepositional phrases
   let cutoff = words.length;
   for (let i = 0; i < words.length; i++) {
     if (tailingArticles.includes(words[i].toLowerCase())) {
-      cutoff = i; // stop before preposition
+      cutoff = i;
       break;
     }
   }
 
-  return words.slice(0, cutoff).join(" ")
+  return words.slice(0, cutoff).join(" ");
 }
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
@@ -513,36 +516,48 @@ function characterTemplate(name) {
       level: 0
     },
     attributes: Object.fromEntries(searchStoryCards({type:TRPGAttributeType}).map(card => [card.title, JSON.parse(card.description)])),
-    skills: Object.fromEntries(searchStoryCards({type:TRPGSkillType}).map(card => [card.title, JSON.parse(card.description)]))
+    skills: Object.fromEntries(searchStoryCards({type:TRPGSkillType}).map(card => [card.title, JSON.parse(card.description)])),
+    inventory: {}
   };
 }
 
 function loadCharacter(name) {
+  // Create a new blank character to fill
   const character = characterTemplate(name)
-  for (const sectionKey in character) {
-    const searchTitle = `${name} - ${sectionKey}`
-    const cards = searchStoryCards({type: TRPGCharacterType, title: searchTitle})
-    if (cards.length > 0) {
-      try {
-        // We only update what is in the character template (new fields are added, old fields are excluded)
-        const sectionContent = JSON.parse(cards[0].description)
-        for (const key in character[sectionKey]) {
-          character[sectionKey][key] = sectionContent[key]
-        }
-        // Normalize character skill and attribute levels/exp, by adding 0 to their exp
-        for (const fieldKey in character[attributesKeyword]) {
-          addExperience(character, 0, attributesKeyword, fieldKey)
-        }
-        for (const fieldKey in character[skillsKeyword]) {
-          addExperience(character, 0, skillsKeyword, fieldKey, character[skillsKeyword][fieldKey].attribute)
-        }
-        // Update story cards to be consistent
-        updateCharacter(character)
-      } catch {
-        throw new Error(`${searchTitle} card entry is invalid JSON!`)
+
+  // Load and Normalize character attributes
+  const attributesCard = searchStoryCards({type: TRPGCharacterType, title: `${name} - ${attributesKeyword}`})
+  if (attributesCard.length > 0) {
+    try {
+      const attCardContent = JSON.parse(attributesCard[0].description)
+      for (const fieldKey in character[attributesKeyword]) {
+        character[attributesKeyword][fieldKey] = attCardContent[fieldKey]
+        addExperience(character, 0, attributesKeyword, fieldKey)
       }
-    } // ELSE: Allow for loading blank/partial characters
+    } catch {
+      throw new Error(`"${name} - ${attributesKeyword}" card entry is invalid JSON!`)
+    }
   }
+
+  // Load and Normalize character skills
+  const skillsCard = searchStoryCards({type: TRPGCharacterType, title: `${name} - ${skillsKeyword}`})
+  if (skillsCard.length > 0) {
+    try {
+      const skillCardContent = JSON.parse(skillsCard[0].description)
+      for (const fieldKey in character[skillsKeyword]) {
+        character[skillsKeyword][fieldKey] = skillCardContent[fieldKey]
+        addExperience(character, 0, skillsKeyword, fieldKey, character[skillsKeyword][fieldKey].attribute)
+      }
+    } catch {
+      throw new Error(`"${name} - ${skillsKeyword}" card entry is invalid JSON!`)
+    }
+  }
+
+  // Laod inventory (a simple full load of inventory card for now)
+  character.inventory = Object.fromEntries(searchStoryCards({type:TRPGCharacterType, title:`${name} - inventory`}).map(card => [card.title, JSON.parse(card.description)]))
+
+  // Update story cards to be consistent (characters with cards only)
+  if(validateCharacter(name)) updateCharacter(character)
   return character
 }
 
@@ -715,8 +730,9 @@ function determineExp(score, success, difficulty) {
 function doTry(inputMaster) {
   const config = state.TRPG.config
   const checkType = inputMaster.parsedArgs.checkType
-  // Load the character (or use default for NPC)
-  const character = loadCharacter(inputMaster.actorText)
+  const character = inputMaster.character
+  
+  // Calculate the check mods
   let checkMod = character[checkType.type][checkType.value].level
   if (checkType.type == skillsKeyword) {
     checkMod += getAttributeMod(character, checkType.card.attribute)
@@ -772,30 +788,67 @@ Usage: you|actor #try ... attribute|skill ... (DC advantage/disadvantage)\n.`
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 ///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////// INVENTORY  MANAGEMENT ///////////////////////////////////////////////////
+
+function newItem(card=null) {
+  return {
+    category: card ? card.category : "junk",
+    rarity: card ? card.rarity : 1.0,
+    amount: card ? card.amount : 1,
+    level: card ? card.level : 0,
+    dmgType: card ? card.dmgType : "none",
+  }
+}
+
+function doTake(inputMaster) {
+  const character = inputMaster.character
+  const item = newItem(inputMaster.parsedArgs.item.card)
+  const itemName = singularize(inputMaster.parsedArgs.item.value.toLowerCase())
+  const itemAmnt = inputMaster.parsedArgs.amount.value ?? item.amount
+  const invItem = character.inventory[itemName]
+  if (invItem) invItem.amount += itemAmnt
+  else {
+    character.inventory[itemName] = item
+    character.inventory[itemName].amount = itemAmnt
+  }
+  // Handle take text output
+  const hasWord = character.info.name.toLowerCase() == "you" ? "have" : "has"
+  const qtyName = character.inventory[itemName].amount > 1 ? singularize(itemName, false) : itemName
+  state.message = `${character.info.name} ${hasWord} ${character.inventory[itemName].amount} ${qtyName}`
+  const takeText = `${character.info.name} ${inputMaster.commandName} ${inputMaster.argumentText}`
+  return [takeText, true]
+}
+
+const doTakeHelp = `<><> #take command
+-- Adds an instance of the specified item(s) to the character's inventory.
+-- (quantity) is optional, defaults to one.
+Usage: you|actor #take (quantity) item_name\n`
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////// OUTPUT|INPUT ////////////////////////////////////////////////////////
 
 function AIDungeonTRPG_input(text, stop=false) {
+  state.message = "" // Clear the message bank
   AIDungeonTRPG_initialize()
   // No "#" means no command
   if (!text.match(hasRegex)) {
     return [text, stop]
   }
 
-  try {
+  //try { // Need error line for mock debugging
     // Parse text into blocks, then find the command entry
     const inputMaster = commandExtract(text)
-
     // Where showInput replaces input text, and showOutput controls output display
     let [showInput, showOutput] = inputMaster.commandEntry.handler(inputMaster)
     if (showInput) text = showInput+" "+inputMaster.flavorText
     state.TRPG.showOutput = showOutput
-
-  } catch (err) {
-    console.log(err.message)
-    state.TRPG.showOutput = false
-    state.message = err.message
-    return [text, true]
-  }
+  // } catch (err) {
+  //   console.log(err.message)
+  //   state.TRPG.showOutput = false
+  //   return [text, true]
+  // }
   return [text, stop]
 }
 
@@ -859,18 +912,68 @@ const storyCards = [
     "title": "Strength",
     "description": "{ \"attribute\": \"Vigor\", \"level\": 0, \"exp\": 0}",
     "useForCharacterCreation": false
+  },
+  {
+    "keys": "",
+    "value": "A simple sword made of steel.",
+    "type": "TRPG - item",
+    "title": "sword",
+    "description": "{ \"category\": \"weapon\", \"rarity\": 1.0, \"amount\": 1, \"level\": 0, \"dmgType\": \"Slashing\"}",
+    "useForCharacterCreation": false
   }
 ]
 
 // MOCK player input
-const playerInput1 = "> You #try to swim across the ocean." // Has no skill or attribute, should fail as command
-const playerInput2 = "> You #try to swim using your strength." // Has a named skill
-const playerInput3 = "> You #try to talk with great vigor." // Has a named attribute
-const playerInput4 = "> You #try talking with great vigor." // Alternate wording
+const playerInput1 = "> You #take the fish." // Unknown item
+const playerInput2 = "> You #take a fish from the table." // Unknown item variation
+const playerInput3 = "> You #take the sword." // Known item
+const playerInput4 = "> You #take a sword from the table." // Known item variation
+const playerInput5 = "> You #take 2 swords." // Known item, plural
+const playerInput6 = "> You #take 2 Swords." // Known item, case sensitive check
+const playerInput7 = "> You #take strong fish." // Unknown item, multi-word
+const playerInput8 = "> You #take 2 strong fish." // Unknown item, multi-word, amount
+const playerInput9 = "> You #take 2 strong fish of the sea." // Unknown item, long multi-word, amount
 
+console.log(AIDungeonTRPG_input(playerInput1))
+console.log(AIDungeonTRPG_output("AI DUNGEON TEXT"))
+console.log(state.message ?? "")
+
+console.log("")
 console.log(AIDungeonTRPG_input(playerInput2))
 console.log(AIDungeonTRPG_output("AI DUNGEON TEXT"))
-console.log(state.message)
-// console.log(AIDungeonTRPG_input(playerInput2))
-// console.log(AIDungeonTRPG_input(playerInput3))
-// console.log(AIDungeonTRPG_input(playerInput4))
+console.log(state.message ?? "")
+
+console.log("")
+console.log(AIDungeonTRPG_input(playerInput3))
+console.log(AIDungeonTRPG_output("AI DUNGEON TEXT"))
+console.log(state.message ?? "")
+
+console.log("")
+console.log(AIDungeonTRPG_input(playerInput4))
+console.log(AIDungeonTRPG_output("AI DUNGEON TEXT"))
+console.log(state.message ?? "")
+
+console.log("")
+console.log(AIDungeonTRPG_input(playerInput5))
+console.log(AIDungeonTRPG_output("AI DUNGEON TEXT"))
+console.log(state.message ?? "")
+
+console.log("")
+console.log(AIDungeonTRPG_input(playerInput6))
+console.log(AIDungeonTRPG_output("AI DUNGEON TEXT"))
+console.log(state.message ?? "")
+
+console.log("")
+console.log(AIDungeonTRPG_input(playerInput7))
+console.log(AIDungeonTRPG_output("AI DUNGEON TEXT"))
+console.log(state.message ?? "")
+
+console.log("")
+console.log(AIDungeonTRPG_input(playerInput8))
+console.log(AIDungeonTRPG_output("AI DUNGEON TEXT"))
+console.log(state.message ?? "")
+
+console.log("")
+console.log(AIDungeonTRPG_input(playerInput9))
+console.log(AIDungeonTRPG_output("AI DUNGEON TEXT"))
+console.log(state.message ?? "")

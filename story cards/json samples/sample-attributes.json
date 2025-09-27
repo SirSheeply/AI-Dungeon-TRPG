@@ -1,9 +1,0 @@
-{
-    "Vigor": { "baseValue": 10 },
-    "Finesse": { "baseValue": 10 },
-    "Agility": { "baseValue": 10 },
-    "Intellect": { "baseValue": 10 },
-    "Spirit": { "baseValue": 10 },
-    "Intuition": { "baseValue": 10 },
-    "Charisma": { "baseValue": 10 }
-}

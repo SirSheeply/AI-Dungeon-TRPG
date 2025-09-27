@@ -18,6 +18,7 @@ const modifier = (text) => {
 ///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
 
 function AIDungeonTRPG_input(text, stop=false) {
+  state.message = "" // Clear the message bank
   AIDungeonTRPG_initialize()
   // No "#" means no command
   if (!text.match(hasRegex)) {
@@ -36,7 +37,6 @@ function AIDungeonTRPG_input(text, stop=false) {
   } catch (err) {
     console.log(err.message)
     state.TRPG.showOutput = false
-    state.message = err.message
     return [text, true]
   }
   return [text, stop]
