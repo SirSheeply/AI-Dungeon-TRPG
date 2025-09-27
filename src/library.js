@@ -142,6 +142,7 @@ function commandRegistry(commandName) {
     // <><> Game Commands
     { handler: doTry,         helpText: doTryHelp,         args: ["checkType*attributes|skills"],  synonyms: ["try", "attempt"] },
     { handler: doTake,        helpText: doTakeHelp,        args: ["amount?number", "item*item"],   synonyms: ["take", "steal", "get", "grab", "receive", "pocket", "bag", "stow"] },
+    { handler: doDrop,        helpText: doDropHelp,        args: ["amount?number", "item*item"],   synonyms: ["discard", "drop", "leave", "dispose", "trash", "donate", "eat", "consume", "use", "drink", "pay", "lose"] },
   ]
 
   // Handles searching of the command registry if needed
@@ -783,3 +784,66 @@ const doTryHelp = `<><> #try command
 -- The task/argument text is free form, but arguments are parsed in order.
 -- Anything after a period is falvor text and not parsed in the command.
 Usage: you|actor #try ... attribute|skill ... (DC advantage/disadvantage)\n.`
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////// INVENTORY  MANAGEMENT ///////////////////////////////////////////////////
+
+function newItem(card=null) {
+  return {
+    category: card ? card.category : "junk",
+    rarity: card ? card.rarity : 1.0,
+    amount: card ? card.amount : 1,
+    level: card ? card.level : 0,
+    dmgType: card ? card.dmgType : "none",
+  }
+}
+
+function doTake(inputMaster) {
+  const character = inputMaster.character
+  const item = newItem(inputMaster.parsedArgs.item.card)
+  const itemName = singularize(inputMaster.parsedArgs.item.value.toLowerCase())
+  const itemAmnt = inputMaster.parsedArgs.amount.value ?? item.amount
+  const invItem = character.inventory[itemName]
+  if (invItem) invItem.amount += itemAmnt
+  else {
+    character.inventory[itemName] = item
+    character.inventory[itemName].amount = itemAmnt
+  }
+  // Handle take text output
+  const hasWord = character.info.name.toLowerCase() == "you" ? "have" : "has"
+  const qtyName = character.inventory[itemName].amount > 1 ? singularize(itemName, false) : itemName
+  state.message = `${character.info.name} ${hasWord} ${character.inventory[itemName].amount} ${qtyName}`
+  const takeText = `${character.info.name} ${inputMaster.commandName} ${inputMaster.argumentText}`
+  return [takeText, true]
+}
+
+const doTakeHelp = `<><> #take command
+-- Adds an instance of the specified item(s) to the character's inventory.
+-- (quantity) is optional, defaults to one.
+Usage: you|actor #take (quantity) item_name\n`
+
+function doDrop(inputMaster) {
+  const character = inputMaster.character
+  const item = newItem(inputMaster.parsedArgs.item.card)
+  const itemName = singularize(inputMaster.parsedArgs.item.value.toLowerCase())
+  const itemAmnt = inputMaster.parsedArgs.amount.value ?? item.amount
+  const invItem = character.inventory[itemName]
+  if (invItem) {
+    invItem.amount -= itemAmnt
+    if (invItem.amount <= 0)
+      delete character.inventory[itemName]
+  }
+  // Handle take text output
+  const hasWord = character.info.name.toLowerCase() == "you" ? "have" : "has"
+  const qtyName = character.inventory[itemName]?.amount > 1 ? singularize(itemName, false) : itemName
+  state.message = `${character.info.name} ${hasWord} ${character.inventory[itemName]?.amount || "zero"} ${qtyName}`
+  const takeText = `${character.info.name} ${inputMaster.commandName} ${inputMaster.argumentText}`
+  return [takeText, true]
+}
+
+const doDropHelp = `<><> #drop command
+-- Removes an instance of the specified item(s) from the character's inventory.
+-- (quantity) is optional, defaults to one.
+Usage: you|actor #drop (quantity) item_name\n`
