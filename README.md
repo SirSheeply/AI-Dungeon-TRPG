@@ -20,17 +20,17 @@ The primary goal of AI-Dungeon-TRPG is to create a command system for AI Dungeon
 4. Import the combined storycards.json back into your scenario.
 5. Play and enjoy!
 
-## How to Begin 101
+## How to Begin (Basics)
 1. Enter #newChar into a do action to create a new character (named "You").
-2. You may view your character sheet in the story cards:
-    i. The "info" story card contains name, class, overall level.
-    ii. The "attributes" story card contains the character's attribute levels & exp.
-    iii. The "skills" story card contains the character's skill levels & exp.
-3. Once you have edited your character as you like, use the #try command as a do action to perform a check.
-    i. For exmaple "#try to climb the wall using athletics."
-    ii. You must include an attribute or skill name after the #try and before the first period.
-    iii. Anything after the first period is considered flavor text and has no bearing on the command.
-    iv. The check behaves like D&D; a d20 is rolled and then the modifer/level of your skill is added to it.
-    v. For the action to succeed it must pass the difficulty (there is a default difficulty in the config story card)
-    vi. You may also provide a difficulty and advantage/disadvanatge to the check by included them in () before the first period.
-    vii. For example "#try to climb the wall using athletics (12)" or "#try to climb the wall using athletics (disadvanatge)" or both (12, advantage)
+2. You may View and Edit your character sheet in the story cards:
+    * The "info" story card contains name, class, overall level.
+    * The "attributes" story card contains the character's attribute levels & exp.
+    * The "skills" story card contains the character's skill levels & exp.
+3. Once you have edited your character as you like, use the #try command as a do action to perform a D&D style check for success.
+    * For exmaple "#try to climb the wall using athletics."
+    * You must include an attribute or skill name after the #try and before the first period; but otherwise, anything goes.
+    * EXP & levels are automatically caluclated!
+    * If you wat to make a check harder or easier you can include a difficulty and advantage/disadvantage in ().
+    * For example "#try to climb the wall using athletics (15 advantage)."
+4. You may use the story action to do any of the above for other named characters, just include the name before the command, e.g. "Sheep #newChar" or "Sheep #tries athletics."
+5. Play as you please, make checks, level up, become unstopable!
