@@ -26,17 +26,18 @@ function AIDungeonTRPG_input(text, stop=false) {
 
   try {
     // Parse text into blocks, then find the command entry
-    const commandInput = commandExtract(text)
-    const commandEntry = commandRegistry(commandInput.commandName)
+    const inputMaster = commandExtract(text)
 
     // Where showInput replaces input text, and showOutput controls output display
-    let [showInput, showOutput] = commandEntry.handler(commandInput)
-    if (showInput) text = showInput + commandInput.flavorText
+    let [showInput, showOutput] = inputMaster.commandEntry.handler(inputMaster)
+    if (showInput) text = showInput+" "+inputMaster.flavorText
     state.TRPG.showOutput = showOutput
 
   } catch (err) {
+    console.log(err.message)
     state.TRPG.showOutput = false
-    return [err.message, stop]
+    state.message = err.message
+    return [text, true]
   }
   return [text, stop]
 }
