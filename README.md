@@ -12,6 +12,7 @@ The primary goal of AI-Dungeon-TRPG is to create a command system for AI Dungeon
 * Create character sheets with #newChar then view/edit them in your story cards.
 * Skills and Attributes of your character level as you use them in actions, like the #try command.
 * Config story card for various settings, scales, and display options.
+* Character's have inventories. Take & Drop items as you please.
 
 ## Installation
 1. Edit a scenario you own and click edit scripts under details.
