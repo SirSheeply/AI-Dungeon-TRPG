@@ -12,6 +12,7 @@
 // Keywords
 const attributesKeyword = "attributes"
 const skillsKeyword = "skills"
+const invKeyword = "inventory"
 const infoKeyword = "info"
 const difficultyKeyword = "difficulty"
 
@@ -60,7 +61,7 @@ function AIDungeonTRPG_initialize() {
     showExp: true,              // Enables/Disables the exp text being displayed
     actionExp: 100,             // Base amount of EXP rewarded for successful actions
   }
-  enforceConfig() // Load config changes from story cards (Not needed in Mock)
+  enforceConfig() // Load config changes from story cards
 
   // Load Story Card Configs
   state.TRPG.attributes = Object.fromEntries(searchStoryCards({type:TRPGAttributeType}).map(card => [card.title, JSON.parse(card.description)]));
@@ -227,7 +228,7 @@ function searchStoryCards({ type = null, title = null, exactType = true, exactTi
 //////////////////////////////////////////////////////// ARGS PARSER ////////////////////////////////////////////////////////
 
 // Helpers for type checks
-const isNumber = (t) => !isNaN(t);
+const isNumber = (t) => !Number.isNaN(t);
 const isVantage = (t) => advantageNames.some(k => k.toLowerCase() === t.toLowerCase());
 const isDC = (t) => Object.keys(state.TRPG.difficultyScale).some(k => k.toLowerCase() === t.toLowerCase());
 const isBoolean = (t) => typeof t === "boolean" || (typeof t === "string" && ["true", "false"].includes(t.toLowerCase()));
@@ -321,9 +322,9 @@ function matchArgument(argDef, tokens) {
     if (!value) {
       for (let i = 0; i < tokens.length; i++) {
         if (checker.fn(tokens[i]) || type === "string") {
-          value = tokens[i];
+          value = type == "number" ? Number(tokens[i]) : tokens[i];
           span = [i, i + 1];
-          matchType = type === "string" ? "string" : type;
+          matchType = type;
           break;
         }
       }
@@ -522,52 +523,51 @@ function characterTemplate(name) {
 }
 
 function loadCharacter(name) {
-  // Create a new blank character to fill
   const character = characterTemplate(name)
-
-  // Load and Normalize character attributes
-  const attributesCard = searchStoryCards({type: TRPGCharacterType, title: `${name} - ${attributesKeyword}`})
-  if (attributesCard.length > 0) {
+  for (const sectionKey in character) {
+    const searchTitle = `${name} - ${sectionKey}`
+    const cards = searchStoryCards({type: TRPGCharacterType, title: searchTitle})
+    if (cards.length > 0) {
       try {
-      const attCardContent = JSON.parse(attributesCard[0].description)
-        for (const fieldKey in character[attributesKeyword]) {
-        character[attributesKeyword][fieldKey] = attCardContent[fieldKey]
-          addExperience(character, 0, attributesKeyword, fieldKey)
+        const sectionContent = JSON.parse(cards[0].description)
+        const copyKeys = [skillsKeyword, attributesKeyword, infoKeyword].includes(sectionKey) ? character[sectionKey] : sectionContent
+        for (const key in copyKeys) {
+          character[sectionKey][key] = copyKeys[key]
         }
     } catch {
-      throw new Error(`"${name} - ${attributesKeyword}" card entry is invalid JSON!`)
+        throw new Error(`${searchTitle} card entry is invalid JSON!`)
+    }
+    } // ELSE: Allow for loading blank/partial characters
+    // Update and calculate any edits of levels/exp for attributes & skills
+    for (const fieldKey in character[attributesKeyword]) {
+      addExperience(character, 0, attributesKeyword, fieldKey)
+      updateCharSection(character, attributesKeyword)
+      updateCharSection(character, infoKeyword)
+    }
+        for (const fieldKey in character[skillsKeyword]) {
+          addExperience(character, 0, skillsKeyword, fieldKey, character[skillsKeyword][fieldKey].attribute)
+      updateCharSection(character, skillsKeyword)
     }
   }
-
-  // Load and Normalize character skills
-  const skillsCard = searchStoryCards({type: TRPGCharacterType, title: `${name} - ${skillsKeyword}`})
-  if (skillsCard.length > 0) {
-    try {
-      const skillCardContent = JSON.parse(skillsCard[0].description)
-        for (const fieldKey in character[skillsKeyword]) {
-        character[skillsKeyword][fieldKey] = skillCardContent[fieldKey]
-          addExperience(character, 0, skillsKeyword, fieldKey, character[skillsKeyword][fieldKey].attribute)
-        }
-      } catch {
-      throw new Error(`"${name} - ${skillsKeyword}" card entry is invalid JSON!`)
-      }
-  }
-
-  // Laod inventory (a simple full load of inventory card for now)
-  character.inventory = Object.fromEntries(searchStoryCards({type:TRPGCharacterType, title:`${name} - inventory`}).map(card => [card.title, JSON.parse(card.description)]))
-
-  // Update story cards to be consistent (characters with cards only)
-  if(validateCharacter(name)) updateCharacter(character)
   return character
 }
 
-function updateCharacter(character) {
-  for (const sectionKey in character) {
+function updateCharSection(character, sectionKey) {
+    const cardContent = JSON.stringify(character[sectionKey], null, 2);
     const cardName = `${character.info.name} - ${sectionKey}`.toLowerCase()
     const cardIndex = storyCards.findIndex(card => card.title.toLowerCase() === cardName && card.type === TRPGCharacterType);
-    if (cardIndex < 0) throw new Error(`Error: Missing character ${sectionKey} card for ${character.info.name}`)
-    const cardContent = JSON.stringify(character[sectionKey], null, 2);
-    updateStoryCard(cardIndex, "", "", TRPGCharacterType, cardName, cardContent);
+    if (cardIndex < 0) {
+        addStoryCard("", "", TRPGCharacterType, cardName, cardContent);
+    } else {
+      updateStoryCard(cardIndex, "", "", TRPGCharacterType, cardName, cardContent);
+  }
+}
+
+function updateCharWhole(character) {
+  if (searchStoryCards({type: TRPGCharacterType, title: `${character.info.name} - info`}) > 0) {
+    for (const sectionKey in character) {
+      updateCharSection(character, sectionKey)
+    }
   }
 }
 
@@ -766,7 +766,9 @@ function doTry(inputMaster) {
   // Add actionXP for skill leveling (save only for existing characters)
   const expGained = determineExp(score, success, difficulty)
   const expText = addExperience(character, expGained, checkType.type, checkType.value, checkType.card.attribute ?? null)
-  if (validateCharacter(character.info.name)) updateCharacter(character);
+  updateCharSection(character, attributesKeyword)
+  updateCharSection(character, skillsKeyword)
+  updateCharSection(character, infoKeyword)
   if (config.showExp && expGained != 0) { state.message += "\n"+expText }
 
   return [resultText, true]
@@ -814,8 +816,9 @@ function doTake(inputMaster) {
   // Handle take text output
   const hasWord = character.info.name.toLowerCase() == "you" ? "have" : "has"
   const qtyName = character.inventory[itemName].amount > 1 ? singularize(itemName, false) : itemName
-  state.message = `${character.info.name} ${hasWord} ${character.inventory[itemName].amount} ${qtyName}`
-  const takeText = `${character.info.name} ${inputMaster.commandName} ${inputMaster.argumentText}`
+  state.message = `${character.info.name} now ${hasWord} ${character.inventory[itemName].amount} ${qtyName}.`
+  const takeText = `${character.info.name} ${inputMaster.commandName} ${inputMaster.argumentText}.`
+  updateCharSection(character, invKeyword);
   return [takeText, true]
 }
 
@@ -830,16 +833,24 @@ function doDrop(inputMaster) {
   const itemName = singularize(inputMaster.parsedArgs.item.value.toLowerCase())
   const itemAmnt = inputMaster.parsedArgs.amount.value ?? item.amount
   const invItem = character.inventory[itemName]
+  const hasWord = character.info.name.toLowerCase() == "you" ? "have" : "has"
+  // Strict item drop rules for valid characters
+  if (validateCharacter(character.info.name)) {
+    if (!invItem || invItem?.amount-itemAmnt < 0) {
+      return [`${character.info.name} ${hasWord} no ${itemName} to ${inputMaster.commandName}.`, false]
+    }
+  }
+  // Remove the amount of the item
   if (invItem) {
     invItem.amount -= itemAmnt
     if (invItem.amount <= 0)
       delete character.inventory[itemName]
   }
-  // Handle take text output
-  const hasWord = character.info.name.toLowerCase() == "you" ? "have" : "has"
+  // Handle drop text output
   const qtyName = character.inventory[itemName]?.amount > 1 ? singularize(itemName, false) : itemName
-  state.message = `${character.info.name} ${hasWord} ${character.inventory[itemName]?.amount || "zero"} ${qtyName}`
-  const takeText = `${character.info.name} ${inputMaster.commandName} ${inputMaster.argumentText}`
+  state.message = `${character.info.name} ${hasWord} ${character.inventory[itemName]?.amount || "no more"} ${qtyName} remaining.`
+  const takeText = `${character.info.name} ${inputMaster.commandName} ${inputMaster.argumentText}.`
+  updateCharSection(character, invKeyword);
   return [takeText, true]
 }
 
