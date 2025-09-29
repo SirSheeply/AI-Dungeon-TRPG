@@ -1,5 +1,5 @@
 /*
-THIS is sandbox area for testing, debugging, experimenting, and developing code blocks.
+THIS is sandbox1 area for testing, debugging, experimenting, and developing code blocks.
 
 // Checkout the Guidebook examples to get an idea of other ways you can use scripting:
 // https://help.aidungeon.com/scripting or ~/documents/scripting.md in this project
@@ -32,11 +32,15 @@ const parenthesesWholeRegex = (/\(.*?\)/g);                 // Matches whole (pa
 const parenthesesInnerRegex = (/\((.*?)\)/g);               // Matches parentheses content
 const matchSpaceRegex = (/\s+/);                            // Matches one or more whitespace characters
 const matchNumberRegex = (/^\d+$/);                         // Matches a string that is entirely a number (digits only)
-const specMatch = (/^([a-zA-Z0-9_]+)([*?])(.*)$/)           // Matches spec*type|type for command argument format
+const spacePunctuation = (/([,;:.!?])/g);                   // Matches punctuation (commas, semicolons, periods, etc.)
+const matchPunctution = (/^[,;:.!?]$/);                     // Matches discard punctuation (commas, semicolons, periods, etc.)
 
-// Lookups
-const metaArgs = ["difficulty?difficulty|number", "vantage?vantage"] // Used to parse meta args in input
+// Meta Lookups; to use and parse meta args in input
 const advantageNames = ["advantage", "disadvantage"]
+const metaArgs = [
+    { difficulty: { types: ["difficulty","number"], req: false } },
+    { vantage: { types: ["vantage"], req: false } },
+]
 
 // Prepositions Phrases
 const leadingArticles = ["a", "an", "the"];
@@ -134,17 +138,17 @@ function getRandomFloat(min, max) {
 function commandRegistry(commandName) {
   const registry = [
     // <><> Core Commands
-    { handler: doHelp,        helpText: doHelpHelp,        args: [],                               synonyms: ["help"]  },
-    { handler: doReset,       helpText: doResetHelp,       args: [],                               synonyms: ["reset"]  },
+    { handler: doHelp,        helpText: doHelpHelp,        args: [],                       synonyms: ["help"]  },
+    { handler: doReset,       helpText: doResetHelp,       args: [],                       synonyms: ["reset"]  },
 
     // <><> Char Commands
-    { handler: doNewChar,     helpText: doNewCharHelp,     args: [],                               synonyms: ["newchar"]  },
-    { handler: doDeleteChar,  helpText: doDeleteCharHelp,  args: [],                               synonyms: ["delchar"]  },
+    { handler: doNewChar,     helpText: doNewCharHelp,     args: [],                       synonyms: ["newchar"]  },
+    { handler: doDeleteChar,  helpText: doDeleteCharHelp,  args: [],                       synonyms: ["delchar"]  },
 
     // <><> Game Commands
-    { handler: doTry,         helpText: doTryHelp,         args: ["checkType*attributes|skills"],  synonyms: ["try", "attempt"] },
-    { handler: doTake,        helpText: doTakeHelp,        args: ["amount?number", "item*item"],   synonyms: ["take", "steal", "get", "grab", "receive", "pocket", "bag", "stow"] },
-    { handler: doDrop,        helpText: doDropHelp,        args: ["amount?number", "item*item"],   synonyms: ["discard", "drop", "leave", "dispose", "trash", "donate", "eat", "consume", "use", "drink", "pay", "lose"] },
+    { handler: doTry,         helpText: doTryHelp,         args: tryCommandSpec,           synonyms: ["try", "attempt"] },
+    { handler: doTake,        helpText: doTakeHelp,        args: takeAndDropCommandSpec,   synonyms: ["take", "steal", "get", "grab", "receive", "pocket", "bag", "stow"] },
+    { handler: doDrop,        helpText: doDropHelp,        args: takeAndDropCommandSpec,   synonyms: ["discard", "drop", "leave", "dispose", "trash", "donate", "eat", "consume", "use", "drink", "pay", "lose"] },
   ]
 
   // Handles searching of the command registry if needed
@@ -223,12 +227,12 @@ function searchStoryCards({ type = null, title = null, exactType = true, exactTi
   });
 }
 
-// ONYL FOR MOCK
+// ONLY FOR MOCK
 function updateStoryCard(index, keys, entry, type, title, description) {
   storyCards[index] = {keys, entry, type, title, description}
 }
 
-// ONYL FOR MOCK
+// ONLY FOR MOCK
 function addStoryCard(keys, entry, type, title, description) {
   storyCards.push({keys, entry, type, title, description})
 }
@@ -268,63 +272,118 @@ function guessType(variable) {
   return "string";
 }
 
-function parseArgs(commandArgs, argumentText) {
-  if (!commandArgs || commandArgs.length === 0 || !argumentText) return [];
+function normalizeTokens(argumentText) {
+  return argumentText
+    .replace(spacePunctuation, " $1 ")
+    .split(matchSpaceRegex)
+    .map(t => t.trim())
+    .filter(Boolean)
+    .filter(t => !matchPunctution.test(t)) // discard punctuation-only tokens
+}
 
-  // Normalize arg specs like "buyItem*item", "amount?number", "check*skill|attribute"
-  const argSpecs = commandArgs.map((spec) => {
-    const match = spec.match(specMatch);
-    if (!match) { throw new Error(`Invalid argument spec: ${spec}`); }
-    const [, argName, marker, types] = match;
-    return {
-      argName: argName,
-      types: types.split("|").map(t => t.toLowerCase().trim()).filter(Boolean),
-      required: marker === "*"
-  }})
+function parseArgs(commandSpec, argumentText) {
+  if (!commandSpec || commandSpec.length === 0 || !argumentText) return [];
+  let tokens = normalizeTokens(argumentText)//argumentText.split(matchSpaceRegex).map(t => t.trim()).filter(Boolean);
 
-  // Split into tokens, filtering empty strings
-  const tokens = argumentText.split(matchSpaceRegex).map(t => t.trim()).filter(Boolean);
-  const results = {};
-
-  for (const argDef of argSpecs) {
-    // Consume matched tokens if we found a span
-    const { value, matchedCard, matchType, span } = matchArgument(argDef, tokens);
-    if (span) tokens.splice(span[0], span[1] - span[0]);
-
-    // Enforce required args
-    if (!value && argDef.required) {
-      throw new Error(`Missing required argument: ${argDef.argName}`);
+  const parsedArgs = {}
+  for (const entry of commandSpec) {
+    const [key, spec] = Object.entries(entry)[0]
+    // --- Case 1: Set ---
+    if (spec.args) {
+      const setTokens = extractSetTokens(tokens, spec.setDelimiters)
+      if (spec.multi) {
+        const clauses = splitByDelimiters(setTokens, spec.elementDelimiters)
+        parsedArgs[key] = clauses.map(clause => parseSetArgs(spec.args, clause) )
+      } else {
+        parsedArgs[key] = parseSetArgs(spec.args, setTokens)
+      }
+      if (spec.req && (!parsedArgs[key] || parsedArgs[key].length === 0)) {
+        throw new Error(`Missing required set: ${key}`)
+      }
     }
+    // --- Case 2: Single Arg ---
+    else {
+      const { value, matchedCard, matchType, span } = matchArgument(spec.types, tokens)
+      if (spec.req && !value) {
+        throw new Error(`Missing required argument: ${key}`)
+      }
+      parsedArgs[key] = {
+        value: value,
+        type: matchType,
+        card: matchedCard ? JSON.parse(matchedCard.description) : null
+      }
+      if (span) tokens.splice(span[0], span[1] - span[0])
+    }
+  }
+  return parsedArgs
+}
 
-    results[argDef.argName] = {
+function parseSetArgs(argSpecs, clauseTokens) {
+  const result = {}
+  for (const argSpec of argSpecs) {
+    const { value, matchedCard, matchType, span } = matchArgument(argSpec.types, clauseTokens)
+    if (argSpec.req && !value) {
+      throw new Error(`Missing required argument in set: ${argSpec.name}`)
+    }
+    result[argSpec.name] = {
+      value: value,
       type: matchType,
-      value: value || null,
-      card: matchedCard ? JSON.parse(matchedCard.description) : null,
-      required: argDef.required
+      card: matchedCard ? JSON.parse(matchedCard.description) : null
+    }
+    if (span) clauseTokens.splice(span[0], span[1] - span[0])
+  }
+  return result
+}
+
+function extractSetTokens(tokens, setDelimiters) {
+  if (!setDelimiters || setDelimiters.length === 0) return [...tokens]
+  const idx = tokens.findIndex(t =>
+    setDelimiters.includes(t.toLowerCase())
+  )
+  if (idx === -1) return [...tokens]
+  return tokens.slice(0, idx) // up to the set delimiter
+}
+
+function splitByDelimiters(tokens, delimiters) {
+  if (!delimiters || delimiters.length === 0) return [tokens]
+
+  const clauses = []
+  let current = []
+
+  for (const token of tokens) {
+    if (delimiters.includes(token.toLowerCase())) {
+      if (current.length > 0) {
+        clauses.push(current)
+        current = []
+      }
+    } else {
+      current.push(token)
     }
   }
 
-  return results;
+  if (current.length > 0) clauses.push(current)
+
+  return clauses
 }
 
 // Unified matcher for arguments
-function matchArgument(argDef, tokens) {
+function matchArgument(argTypes, tokens) {
   let value = null;
   let matchedCard = null;
   let matchType = null;
   let span = null;
   
   // Check All Types
-  for (const type of argDef.types) {
+  for (const type of argTypes) {
     const checker = typeCheckers.find(tc => tc.type == type)
     
     // 1) Storycard + multi-word handling
     if (checker.hascards) {
       const cardMatch = findBestCardMatch(type, checker, tokens);
       if (cardMatch) {
-        value = cardMatch.card.title;
+        value = checker.fallback ? tokens.join(" ") : cardMatch.card.title;
         matchedCard = cardMatch.card;
-        span = cardMatch.span;
+        span = checker.fallback ? [0, tokens.length] : cardMatch.span;
         matchType = type;
       }
     }
@@ -333,7 +392,7 @@ function matchArgument(argDef, tokens) {
     if (!value) {
       for (let i = 0; i < tokens.length; i++) {
         if (checker.fn(tokens[i]) || type === "string") {
-          value = type == "number" ? Number(tokens[i]) : tokens[i];
+          value = type == "number" ? (Number(tokens[i]) || null) : tokens[i];
           span = [i, i + 1];
           matchType = type;
           break;
@@ -341,15 +400,12 @@ function matchArgument(argDef, tokens) {
       }
     }
 
-    // 3) Fallback for items
+    // 3) Fallback (multi-word items)
     if (!value && checker.fallback) {
-      const fallback = fallbackItemExtraction(tokens);
+      const fallback = fallbackItemExtraction(tokens); // now returns clean phrase
       if (fallback) {
         value = fallback;
-        const idx = tokens.findIndex(
-          t => t.toLowerCase() === fallback.toLowerCase()
-        );
-        if (idx !== -1) span = [idx, idx + 1];
+        span = [0, tokens.length]; // consume the whole clause
         matchType = type;
       }
     }
@@ -361,11 +417,8 @@ function matchArgument(argDef, tokens) {
 // Helper: find best storycard match for a given type
 function findBestCardMatch(type, checker, tokens) {
   if (!tokens.length) return null;
-
   const titles = storyCards.filter(c => c.type.toLowerCase() === `${TRPGCardType} - ${type}`.toLowerCase()).map(c => c.title.toLowerCase());
-
   if (!titles.length) return null;
-
   // Try all n-grams from longest to shortest
   for (let n = tokens.length; n > 0; n--) {
     for (let i = 0; i <= tokens.length - n; i++) {
@@ -738,15 +791,24 @@ function determineExp(score, success, difficulty) {
 ///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////// TRY COMMAND ////////////////////////////////////////////////////////
 
+const tryCommandSpec = [
+  { checkType: { types: ["skills","attributes"], req: false } }
+]
+
 function doTry(inputMaster) {
   const config = state.TRPG.config
   const checkType = inputMaster.parsedArgs.checkType
   const character = inputMaster.character
   
   // Calculate the check mods
-  let checkMod = character[checkType.type][checkType.value].level
-  if (checkType.type == skillsKeyword) {
-    checkMod += getAttributeMod(character, checkType.card.attribute)
+  let checkMod = 0
+  if (checkType.type && checkType.value) {
+    if (checkType.type == skillsKeyword) {
+      checkMod = character[checkType.type][checkType.value].level
+      checkMod += getAttributeMod(character, checkType.card.attribute)
+    } else if (checkType.type == attributesKeyword) {
+      checkMod = getAttributeMod(character, checkType.value)
+    }
   }
 
   // Roll dice
@@ -775,12 +837,14 @@ function doTry(inputMaster) {
   }
 
   // Add actionXP for skill leveling (save only for existing characters)
-  const expGained = determineExp(score, success, difficulty)
-  const expText = addExperience(character, expGained, checkType.type, checkType.value, checkType.card.attribute ?? null)
-  updateCharSection(character, attributesKeyword)
-  updateCharSection(character, skillsKeyword)
-  updateCharSection(character, infoKeyword)
-  if (config.showExp && expGained != 0) { state.message += "\n"+expText }
+  if (checkType.type && checkType.value) {
+    const expGained = determineExp(score, success, difficulty)
+    const expText = addExperience(character, expGained, checkType.type, checkType.value, checkType.card?.attribute ?? null)
+    updateCharSection(character, attributesKeyword)
+    updateCharSection(character, skillsKeyword)
+    updateCharSection(character, infoKeyword)
+    if (config.showExp && expGained != 0) { state.message += "\n"+expText }
+  }
 
   return [resultText, true]
 }
@@ -813,22 +877,44 @@ function newItem(card=null) {
   }
 }
 
-function doTake(inputMaster) {
-  const character = inputMaster.character
-  const item = newItem(inputMaster.parsedArgs.item.card)
-  const itemName = singularize(inputMaster.parsedArgs.item.value.toLowerCase())
-  const itemAmnt = inputMaster.parsedArgs.amount.value ?? item.amount
-  const invItem = character.inventory[itemName]
-  if (invItem) invItem.amount += itemAmnt
-  else {
-    character.inventory[itemName] = item
-    character.inventory[itemName].amount = itemAmnt
+const takeAndDropCommandSpec = [
+  {
+    items: {
+      args: [
+        { name: "amount", types: ["number"], req: false },
+        { name: "item",   types: ["item"],   req: true }
+      ],
+      req: true,
+      multi: true,
+      elementDelimiters: [",", "and"],
+      setDelimiters: ["for"]
+    }
   }
-  // Handle take text output
+]
+
+function doTake(inputMaster) {
+  let messages = []
+  const character = inputMaster.character
+  const items = inputMaster.parsedArgs.items
   const hasWord = character.info.name.toLowerCase() == "you" ? "have" : "has"
-  const qtyName = character.inventory[itemName].amount > 1 ? singularize(itemName, false) : itemName
-  state.message = `${character.info.name} now ${hasWord} ${character.inventory[itemName].amount} ${qtyName}.`
-  const takeText = `${character.info.name} ${inputMaster.commandName} ${inputMaster.argumentText}.`
+  // Loop throough all items
+  for (const index in items) {
+    const itemData = newItem(items[index].item.card)
+    const itemName = singularize(items[index].item.value.toLowerCase())
+    const itemAmnt = items[index].amount.value ?? itemData.amount
+    const invItem = character.inventory[itemName]
+    // Add or Increment Item
+    if (invItem) invItem.amount += itemAmnt
+    else {
+      character.inventory[itemName] = itemData
+      character.inventory[itemName].amount = itemAmnt
+    }
+    // Handle take text output
+    const qtyName = character.inventory[itemName].amount > 1 ? singularize(itemName, false) : itemName
+    messages.push(`${character.info.name} now ${hasWord} ${character.inventory[itemName].amount} ${qtyName}.`)
+  }
+  state.message = messages.join(' ')
+  const takeText = `[${character.info.name} ${inputMaster.commandName} ${inputMaster.argumentText}.]`
   updateCharSection(character, invKeyword);
   return [takeText, true]
 }
@@ -839,27 +925,38 @@ const doTakeHelp = `<><> #take command
 Usage: you|actor #take (quantity) item_name\n`
 
 function doDrop(inputMaster) {
+  let messages = []
   const character = inputMaster.character
-  const item = newItem(inputMaster.parsedArgs.item.card)
-  const itemName = singularize(inputMaster.parsedArgs.item.value.toLowerCase())
-  const itemAmnt = inputMaster.parsedArgs.amount.value ?? item.amount
-  const invItem = character.inventory[itemName]
+  const items = inputMaster.parsedArgs.items
   const hasWord = character.info.name.toLowerCase() == "you" ? "have" : "has"
   // Strict item drop rules for valid characters
-  if (validateCharacter(character.info.name)) {
-    if (!invItem || invItem?.amount-itemAmnt < 0) {
-      return [`${character.info.name} ${hasWord} no ${itemName} to ${inputMaster.commandName}.`, false]
+  for (const index in items) {
+    const itemName = singularize(items[index].item.value.toLowerCase())
+    if (validateCharacter(character.info.name)) {
+      if (!character.inventory[itemName]) {
+        return [`${character.info.name} ${hasWord}n't got any ${itemName} to ${inputMaster.commandName}.`, false]
+      } else if (character.inventory[itemName].amount-character.inventory[itemName] < 0) {
+        return [`${character.info.name} ${hasWord}n't enough ${itemName} to ${inputMaster.commandName}.`, false]
+      }
     }
   }
-  // Remove the amount of the item
-  if (invItem) {
-    invItem.amount -= itemAmnt
-    if (invItem.amount <= 0)
-      delete character.inventory[itemName]
+  // Loop through all the items
+  for (const index in items) {
+    const itemData = newItem(items[index].item.card)
+    const itemName = singularize(items[index].item.value.toLowerCase())
+    const itemAmnt = items[index].amount.value ?? itemData.amount
+    const invItem = character.inventory[itemName]
+    // Remove the amount of the item
+    if (invItem) {
+      invItem.amount -= itemAmnt
+      if (invItem.amount <= 0)
+        delete character.inventory[itemName]
+    }
+    // Handle drop text output
+    const qtyName = character.inventory[itemName]?.amount > 1 ? singularize(itemName, false) : itemName
+    messages.push(`${character.info.name} ${hasWord} ${character.inventory[itemName]?.amount || "no more"} ${qtyName} remaining.`)
   }
-  // Handle drop text output
-  const qtyName = character.inventory[itemName]?.amount > 1 ? singularize(itemName, false) : itemName
-  state.message = `${character.info.name} ${hasWord} ${character.inventory[itemName]?.amount || "no more"} ${qtyName} remaining.`
+  state.message = `[${messages.join(' ')}]`
   const takeText = `${character.info.name} ${inputMaster.commandName} ${inputMaster.argumentText}.`
   updateCharSection(character, invKeyword);
   return [takeText, true]
@@ -977,12 +1074,21 @@ const storyCards = [
   },
 ]
 
-// MOCK player input
+// <><> MOCK player input <><>
 const testTryInputs = [
-"> You #try to climb the wall.",          // Try without any keyword (general check)
-"> You #try to climb with your vigor.",   // Try with attribute keyword (attribute check)
-"> You #try to climb with your strength.",// Try with skill keyword (skill check)
+"> You #try to climb the wall.",                // Try without any keyword (general check)
+"> You #try to climb with your vigor.",         // Try with attribute keyword (attribute check)
+"> You #try to climb with your strength.",      // Try with skill keyword (skill check)
+"> You #try to climb the wall (advantage).",    // Try with meta info vantage
+"> You #try to climb the wall (12 advantage).", // Try with meta info dc & vantage
 ]
+for (input of testTryInputs) {
+  console.log(AIDungeonTRPG_input(input))
+  console.log(AIDungeonTRPG_output("AI DUNGEON TEXT"))
+  console.log(`${state.message ?? ""}\n`)
+}
+console.log(`---------------------------------------`)
+
 const testInvInputs = [
 "> You #take the fish.",                  // Unknown item
 "> You #take a fish from the table.",     // Unknown item variation
@@ -996,9 +1102,12 @@ const testInvInputs = [
 "> You #drop 1 strong fish of the sea.",  // Drop one item
 "> You #drop 1 strong fish of the sea.",  // Drop all of an item
 "> You #drop 2 strong fish of the sea.",  // Drop items you don't have
+"> You #drop a sword, and 2 fish.",       // Drop many items
+"> You #drop a strong sword, and 1 fish!",// Drop invalid and valid items + punctution
 ]
 for (input of testInvInputs) {
   console.log(AIDungeonTRPG_input(input))
   console.log(AIDungeonTRPG_output("AI DUNGEON TEXT"))
   console.log(`${state.message ?? ""}\n`)
 }
+console.log(`---------------------------------------`)
