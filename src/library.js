@@ -150,7 +150,7 @@ function commandRegistry(commandName) {
     // <><> Inventory & Currency
     { handler: doTake,        helpText: doTakeHelp,        args: takeAndDropCommandSpec,   synonyms: ["take", "steal", "get", "grab", "receive", "pocket", "bag", "stow", "aquire", "obtain"] },
     { handler: doDrop,        helpText: doDropHelp,        args: takeAndDropCommandSpec,   synonyms: ["discard", "drop", "leave", "dispose", "trash", "donate", "eat", "consume", "use", "drink", "pay", "lose"] },
-    // { handler: doTrade,       helpText: doTradeHelp,       args: tradeCommandSpec,         synonyms: ["trade", "swap", "exchange"] },
+    { handler: doTrade,       helpText: doTradeHelp,       args: tradeCommandSpec,         synonyms: ["trade", "swap", "exchange"] },
     // { handler: doGive,        helpText: doGiveHelp,        args: giveCommandSpec,          synonyms: ["give", "pass"] },
   ]
 
@@ -293,6 +293,8 @@ function parseArgs(commandSpec, argumentText) {
       if (spec.req && (!parsedArgs[key] || parsedArgs[key].length === 0)) {
         throw new Error(`Missing required set: ${key}`)
       }
+      tokens.splice(0, setTokens.length)
+      if (spec.setDelimiters.includes(tokens[0]?.toLowerCase())) tokens.splice(0, 1)
     }
     // --- Case 2: Single Arg ---
     else {
@@ -861,25 +863,43 @@ function newItem(card=null) {
   }
 }
 
-const takeAndDropCommandSpec = [
-  {
-    items: {
-      args: [
-        { name: "amount", types: ["number"], req: false },
-        { name: "item",   types: ["item"],   req: true }
-      ],
-      req: true,
-      multi: true,
-      elementDelimiters: [",", "and"],
-      setDelimiters: []
+function removeItems(character, items) {
+  const messages = []
+  const hasWord = character.info.name.toLowerCase() == "you" ? "have" : "has"
+  // If character is valid, strictly enforce give_item quantity
+  if (validateCharacter(character.info.name) > 0) {
+    for (const index in items) {
+      const itemName = singularize(items[index].item.value.toLowerCase())
+      if (!character.inventory[itemName]) {
+        messages.push(`${character.info.name} ${hasWord}n't got any ${itemName}.`)
+        return [messages, false]
+      } else if (character.inventory[itemName].amount-character.inventory[itemName] < 0) {
+        messages.push(`${character.info.name} ${hasWord}n't enough ${itemName}.`)
+        return [messages, false]
     }
   }
-]
+  }
+  // Remove all the items
+  for (const index in items) {
+    const itemData = newItem(items[index].item.card)
+    const itemName = singularize(items[index].item.value.toLowerCase())
+    const itemAmnt = items[index].amount.value ?? itemData.amount
+    const invItem = character.inventory[itemName]
+    // Remove the amount of the item
+    if (invItem) {
+      invItem.amount -= itemAmnt
+      if (invItem.amount <= 0)
+        delete character.inventory[itemName]
+    }
+    // Handle drop text output
+    const qtyName = character.inventory[itemName]?.amount > 1 ? singularize(itemName, false) : itemName
+    messages.push(`${character.info.name} ${hasWord} ${character.inventory[itemName]?.amount || "no more"} ${qtyName} remaining.`)
+  }
+  return [messages, true]
+}
 
-function doTake(inputMaster) {
-  let messages = []
-  const character = inputMaster.character
-  const items = inputMaster.parsedArgs.items
+function addItems(character, items) {
+  const messages = []
   const hasWord = character.info.name.toLowerCase() == "you" ? "have" : "has"
   // Loop throough all items
   for (const index in items) {
@@ -897,6 +917,28 @@ function doTake(inputMaster) {
   const qtyName = character.inventory[itemName].amount > 1 ? singularize(itemName, false) : itemName
     messages.push(`${character.info.name} now ${hasWord} ${character.inventory[itemName].amount} ${qtyName}.`)
   }
+  return messages
+}
+
+const takeAndDropCommandSpec = [
+  {
+    items: {
+      args: [
+        { name: "amount", types: ["number"], req: false },
+        { name: "item",   types: ["item"],   req: true }
+      ],
+      req: true,
+      multi: true,
+      elementDelimiters: [",", "and"],
+      setDelimiters: []
+    }
+  }
+]
+
+function doTake(inputMaster) {
+  const character = inputMaster.character
+  const items = inputMaster.parsedArgs.items
+  const messages = addItems(character, items)
   state.message = messages.join(' ')
   const takeText = `[${character.info.name} ${inputMaster.commandName} ${inputMaster.argumentText}.]`
   updateCharacter(character);
@@ -909,44 +951,70 @@ const doTakeHelp = `<><> #take command
 Usage: you|actor #take (quantity) item_name\n`
 
 function doDrop(inputMaster) {
-  let messages = []
   const character = inputMaster.character
   const items = inputMaster.parsedArgs.items
-  const hasWord = character.info.name.toLowerCase() == "you" ? "have" : "has"
-  // Strict item drop rules for valid characters
-  for (const index in items) {
-    const itemName = singularize(items[index].item.value.toLowerCase())
-    if (validateCharacter(character.info.name) > 0) {
-      if (!character.inventory[itemName]) {
-        return [`${character.info.name} ${hasWord}n't got any ${itemName} to ${inputMaster.commandName}.`, false]
-      } else if (character.inventory[itemName].amount-character.inventory[itemName] < 0) {
-        return [`${character.info.name} ${hasWord}n't enough ${itemName} to ${inputMaster.commandName}.`, false]
-    }
-  }
-  }
-  // Loop through all the items
-  for (const index in items) {
-    const itemData = newItem(items[index].item.card)
-    const itemName = singularize(items[index].item.value.toLowerCase())
-    const itemAmnt = items[index].amount.value ?? itemData.amount
-    const invItem = character.inventory[itemName]
-  // Remove the amount of the item
-  if (invItem) {
-    invItem.amount -= itemAmnt
-    if (invItem.amount <= 0)
-      delete character.inventory[itemName]
-  }
-  // Handle drop text output
-  const qtyName = character.inventory[itemName]?.amount > 1 ? singularize(itemName, false) : itemName
-    messages.push(`${character.info.name} ${hasWord} ${character.inventory[itemName]?.amount || "no more"} ${qtyName} remaining.`)
-  }
+  // Remove the items
+  const [messages, success] = removeItems(character, items)
+  // Handle output texts
   state.message = `[${messages.join(' ')}]`
-  const takeText = `${character.info.name} ${inputMaster.commandName} ${inputMaster.argumentText}.`
-  updateCharacter(character);
-  return [takeText, true]
+  const unableText = success ? "" : " was not able to"
+  const outText = `[${character.info.name}${unableText} ${inputMaster.commandName} ${inputMaster.argumentText}.]`
+  if (success) updateCharacter(character);
+  return [outText, success]
 }
 
 const doDropHelp = `<><> #drop command
 -- Removes an instance of the specified item(s) from the character's inventory.
 -- (quantity) is optional, defaults to one.
 Usage: you|actor #drop (quantity) item_name\n`
+
+const tradeCommandSpec = [
+  {
+    give_items: {
+      args: [
+        { name: "amount", types: ["number"], req: false },
+        { name: "item",   types: ["item"],   req: true }
+      ],
+      req: true,
+      multi: true,
+      elementDelimiters: [",", "and"],
+      setDelimiters: ["for"]
+    }
+  },
+  {
+    take_items: {
+      args: [
+        { name: "amount", types: ["number"], req: false },
+        { name: "item",   types: ["item"],   req: true }
+      ],
+      req: true,
+      multi: true,
+      elementDelimiters: [",", "and"],
+      setDelimiters: []
+    }
+  }
+]
+
+function doTrade(inputMaster) {
+  const character = inputMaster.character
+  const take_items = inputMaster.parsedArgs.take_items
+  const give_items = inputMaster.parsedArgs.give_items
+  console.log(take_items)
+  console.log(give_items)
+
+  // Remove the give_items, then add the take_items
+  const [messages, success] = removeItems(character, give_items)
+  messages.push(success ? addItems(character, take_items) : [])
+
+  // Handle output texts
+  state.message = `[${messages.join(' ')}]`
+  const unableText = success ? "" : " was not able to"
+  const outText = `${character.info.name}${unableText} ${inputMaster.commandName} ${inputMaster.argumentText}.`
+  if (success) updateCharacter(character);
+  return [outText, success]
+}
+
+const doTradeHelp = `<><> #trade command
+-- Adds and Removes the specified items in the character's inventory.
+-- (quantity) is optional, defaults to one.
+Usage: you|actor #trade (quantity) give_item for (quantity) take_item\n`
