@@ -32,7 +32,7 @@ const parenthesesInnerRegex = (/\((.*?)\)/g);               // Matches parenthes
 const matchSpaceRegex = (/\s+/);                            // Matches one or more whitespace characters
 const matchNumberRegex = (/^\d+$/);                         // Matches a string that is entirely a number (digits only)
 const spacePunctuation = (/([,;:.!?])/g);                   // Matches punctuation (commas, semicolons, periods, etc.)
-const matchPunctution = (/^[,;:.!?]$/);                     // Matches discard punctuation (commas, semicolons, periods, etc.)
+const matchPunctution = (/^[;:.!?]$/);                      // Matches discard punctuation (semicolons, periods, etc.)
 
 // Meta Lookups; to use and parse meta args in input
 const advantageNames = ["advantage", "disadvantage"]
@@ -140,14 +140,18 @@ function commandRegistry(commandName) {
     { handler: doHelp,        helpText: doHelpHelp,        args: [],                       synonyms: ["help"]  },
     { handler: doReset,       helpText: doResetHelp,       args: [],                       synonyms: ["reset"]  },
 
-    // <><> Char Commands
+    // <><> Character Commands
     { handler: doNewChar,     helpText: doNewCharHelp,     args: [],                       synonyms: ["newchar"]  },
     { handler: doDeleteChar,  helpText: doDeleteCharHelp,  args: [],                       synonyms: ["delchar"]  },
 
-    // <><> Game Commands
+    // <><> Skills & Abilities
     { handler: doTry,         helpText: doTryHelp,         args: tryCommandSpec,           synonyms: ["try", "attempt"] },
-    { handler: doTake,        helpText: doTakeHelp,        args: takeAndDropCommandSpec,   synonyms: ["take", "steal", "get", "grab", "receive", "pocket", "bag", "stow"] },
+
+    // <><> Inventory & Currency
+    { handler: doTake,        helpText: doTakeHelp,        args: takeAndDropCommandSpec,   synonyms: ["take", "steal", "get", "grab", "receive", "pocket", "bag", "stow", "aquire", "obtain"] },
     { handler: doDrop,        helpText: doDropHelp,        args: takeAndDropCommandSpec,   synonyms: ["discard", "drop", "leave", "dispose", "trash", "donate", "eat", "consume", "use", "drink", "pay", "lose"] },
+    // { handler: doTrade,       helpText: doTradeHelp,       args: tradeCommandSpec,         synonyms: ["trade", "swap", "exchange"] },
+    // { handler: doGive,        helpText: doGiveHelp,        args: giveCommandSpec,          synonyms: ["give", "pass"] },
   ]
 
   // Handles searching of the command registry if needed
@@ -238,7 +242,7 @@ const isDC = (t) => Object.keys(state.TRPG.difficultyScale).some(k => k.toLowerC
 const isBoolean = (t) => typeof t === "boolean" || (typeof t === "string" && ["true", "false"].includes(t.toLowerCase()));
 const isItem = (t) => searchStoryCards({ type: TRPGItemType, title: singularize(t) }).length > 0;
 const isSpell = (t) => searchStoryCards({ type: "spell", title: t }).length > 0;
-const isCharacter = (t) => validateCharacter(t);
+const isCharacter = (t) => validateCharacter(t) > 0;
 const isAttribute = (t) => Object.keys(state.TRPG.attributes).some(k => k.toLowerCase() === t.toLowerCase());
 const isSkill = (t) => Object.keys(state.TRPG.skills).some(k => k.toLowerCase() === t.toLowerCase());
 
@@ -267,12 +271,12 @@ function normalizeTokens(argumentText) {
     .split(matchSpaceRegex)
     .map(t => t.trim())
     .filter(Boolean)
-    .filter(t => !matchPunctution.test(t)) // discard punctuation-only tokens
+    .filter(t => !matchPunctution.test(t)) // discard punctuation-only tokens (keep commas)
 }
 
 function parseArgs(commandSpec, argumentText) {
   if (!commandSpec || commandSpec.length === 0 || !argumentText) return [];
-  let tokens = normalizeTokens(argumentText)//argumentText.split(matchSpaceRegex).map(t => t.trim()).filter(Boolean);
+  let tokens = normalizeTokens(argumentText)
 
   const parsedArgs = {}
   for (const entry of commandSpec) {
@@ -569,58 +573,52 @@ function characterTemplate(name) {
       class: "Adventurer",
       level: 0
     },
-    attributes: Object.fromEntries(searchStoryCards({type:TRPGAttributeType}).map(card => [card.title, JSON.parse(card.description)])),
-    skills: Object.fromEntries(searchStoryCards({type:TRPGSkillType}).map(card => [card.title, JSON.parse(card.description)])),
+    attributes: {... state.TRPG.attributes},
+    skills: {... state.TRPG.skills},
     inventory: {}
   };
 }
 
 function loadCharacter(name) {
   const character = characterTemplate(name)
+  const dynamicSections = [invKeyword]
   for (const sectionKey in character) {
     const searchTitle = `${name} - ${sectionKey}`
     const cards = searchStoryCards({type: TRPGCharacterType, title: searchTitle})
     if (cards.length > 0) {
       try {
         const sectionContent = JSON.parse(cards[0].description)
-        const copyKeys = [skillsKeyword, attributesKeyword, infoKeyword].includes(sectionKey) ? character[sectionKey] : sectionContent
-        for (const key in copyKeys) {
-          character[sectionKey][key] = copyKeys[key]
+        const keysFrom = dynamicSections.includes(sectionKey) ? sectionContent : character[sectionKey]
+        for (const key in keysFrom) {
+          character[sectionKey][key] = sectionContent[key] ?? character[sectionKey][key]
         }
     } catch {
         throw new Error(`${searchTitle} card entry is invalid JSON!`)
     }
     } // ELSE: Allow for loading blank/partial characters
+  }
     // Update and calculate any edits of levels/exp for attributes & skills
     for (const fieldKey in character[attributesKeyword]) {
       addExperience(character, 0, attributesKeyword, fieldKey)
-      updateCharSection(character, attributesKeyword)
-      updateCharSection(character, infoKeyword)
     }
         for (const fieldKey in character[skillsKeyword]) {
           addExperience(character, 0, skillsKeyword, fieldKey, character[skillsKeyword][fieldKey].attribute)
-      updateCharSection(character, skillsKeyword)
-    }
   }
   return character
 }
 
-function updateCharSection(character, sectionKey) {
+function updateCharacter(character) {
+  if (validateCharacter(character.info.name) > 0) {
+    for (const sectionKey in character) {
     const cardContent = JSON.stringify(character[sectionKey], null, 2);
-    const cardName = `${character.info.name} - ${sectionKey}`.toLowerCase()
-    const cardIndex = storyCards.findIndex(card => card.title.toLowerCase() === cardName && card.type === TRPGCharacterType);
+    const cardName = `${character.info.name} - ${sectionKey}`
+    const cardIndex = storyCards.findIndex(card => card.title.toLowerCase() === cardName.toLowerCase() && card.type === TRPGCharacterType);
     if (cardIndex < 0) {
-        addStoryCard("", "", TRPGCharacterType, cardName, cardContent);
+        addStoryCard("", "", TRPGCharacterType, cardName, cardContent); // Repair missing cards
     } else {
       updateStoryCard(cardIndex, "", "", TRPGCharacterType, cardName, cardContent);
   }
 }
-
-function updateCharWhole(character) {
-  if (searchStoryCards({type: TRPGCharacterType, title: `${character.info.name} - info`}) > 0) {
-    for (const sectionKey in character) {
-      updateCharSection(character, sectionKey)
-    }
   }
 }
 
@@ -633,10 +631,8 @@ function doNewChar(inputMaster) {
   const newCharacter = characterTemplate(name);
 
   // Prevent duplicate characters
-  for (const sectionKey in newCharacter) {
-    if (validateCharacter(name)) {
-      throw new Error(`Error: Character ${sectionKey} already exists!`);
-    }
+  if (validateCharacter(name) > 0) {
+    throw new Error(`Error: Character ${name} already exists!`);
   }
 
   // Create story cards
@@ -676,13 +672,14 @@ const doDeleteCharHelp = `<><> #delChar command
 Usage: character_name #delChar\n`
 
 function validateCharacter(name) {
-  if (!name) return false
+  let cardCount = 0
+  if (!name) return cardCount
   for (const sectionKey in characterTemplate(name)) {
-    if (searchStoryCards({ type: TRPGCharacterType, title: `${name} - ${sectionKey}`}).length <= 0) {
-      return false
+    if (searchStoryCards({ type: TRPGCharacterType, title: `${name} - ${sectionKey}`}).length > 0) {
+      cardCount++
     }
   }
-  return true
+  return cardCount
 }
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
@@ -829,9 +826,7 @@ function doTry(inputMaster) {
   if (checkType.type && checkType.value) {
   const expGained = determineExp(score, success, difficulty)
     const expText = addExperience(character, expGained, checkType.type, checkType.value, checkType.card?.attribute ?? null)
-  updateCharSection(character, attributesKeyword)
-  updateCharSection(character, skillsKeyword)
-  updateCharSection(character, infoKeyword)
+    updateCharacter(character)
   if (config.showExp && expGained != 0) { state.message += "\n"+expText }
   }
 
@@ -876,7 +871,7 @@ const takeAndDropCommandSpec = [
       req: true,
       multi: true,
       elementDelimiters: [",", "and"],
-      setDelimiters: ["for"]
+      setDelimiters: []
     }
   }
 ]
@@ -904,7 +899,7 @@ function doTake(inputMaster) {
   }
   state.message = messages.join(' ')
   const takeText = `[${character.info.name} ${inputMaster.commandName} ${inputMaster.argumentText}.]`
-  updateCharSection(character, invKeyword);
+  updateCharacter(character);
   return [takeText, true]
 }
 
@@ -921,7 +916,7 @@ function doDrop(inputMaster) {
   // Strict item drop rules for valid characters
   for (const index in items) {
     const itemName = singularize(items[index].item.value.toLowerCase())
-  if (validateCharacter(character.info.name)) {
+    if (validateCharacter(character.info.name) > 0) {
       if (!character.inventory[itemName]) {
         return [`${character.info.name} ${hasWord}n't got any ${itemName} to ${inputMaster.commandName}.`, false]
       } else if (character.inventory[itemName].amount-character.inventory[itemName] < 0) {
@@ -947,7 +942,7 @@ function doDrop(inputMaster) {
   }
   state.message = `[${messages.join(' ')}]`
   const takeText = `${character.info.name} ${inputMaster.commandName} ${inputMaster.argumentText}.`
-  updateCharSection(character, invKeyword);
+  updateCharacter(character);
   return [takeText, true]
 }
 
