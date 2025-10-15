@@ -283,7 +283,8 @@ function parseArgs(commandSpec, argumentText) {
     const [key, spec] = Object.entries(entry)[0]
     // --- Case 1: Set ---
     if (spec.args) {
-      const setTokens = extractSetTokens(tokens, spec.setDelimiters)
+      const [setTokens, leftTokens] = extractSetTokens(tokens, spec.setDelimiters)
+      tokens = leftTokens
       if (spec.multi) {
         const clauses = splitByDelimiters(setTokens, spec.elementDelimiters)
         parsedArgs[key] = clauses.map(clause => parseSetArgs(spec.args, clause) )
@@ -293,8 +294,6 @@ function parseArgs(commandSpec, argumentText) {
       if (spec.req && (!parsedArgs[key] || parsedArgs[key].length === 0)) {
         throw new Error(`Missing required set: ${key}`)
       }
-      tokens.splice(0, setTokens.length)
-      if (spec.setDelimiters.includes(tokens[0]?.toLowerCase())) tokens.splice(0, 1)
     }
     // --- Case 2: Single Arg ---
     else {
@@ -331,12 +330,13 @@ function parseSetArgs(argSpecs, clauseTokens) {
 }
 
 function extractSetTokens(tokens, setDelimiters) {
-  if (!setDelimiters || setDelimiters.length === 0) return [...tokens]
-  const idx = tokens.findIndex(t =>
-    setDelimiters.includes(t.toLowerCase())
-  )
-  if (idx === -1) return [...tokens]
-  return tokens.slice(0, idx) // up to the set delimiter
+  if (!setDelimiters || setDelimiters.length === 0) return [[...tokens], []]
+  const idx = tokens.findIndex(t => setDelimiters.includes(t.toLowerCase()))
+  if (idx === -1) return [[...tokens], []]
+  const setTokens = tokens.slice(0, idx) // up to the set delimiter
+  const newTokens = tokens.toSpliced(0, idx+1) // without delimiter
+  console.log(setTokens, newTokens)
+  return [setTokens, newTokens]
 }
 
 function splitByDelimiters(tokens, delimiters) {
