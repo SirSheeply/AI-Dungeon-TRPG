@@ -22,6 +22,10 @@ function AIDungeonTRPG_input(text, stop=false) {
   AIDungeonTRPG_initialize()
   // No "#" means no command
   if (!text.match(hasRegex)) {
+    const sinceLast = info.actionCount-state.TRPG.lastMemory
+    if (state.TRPG.autoMemory > 10 && sinceLast >= state.TRPG.autoMemory) {
+      doMemory()
+    }
     return [text, stop]
   }
 

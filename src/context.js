@@ -7,19 +7,8 @@
 // Every script needs a modifier function
 const modifier = (text) => {
   // Your other context modifier scripts go here (preferred)
-  [text, stop] = AIDungeonTRPG_context(text)
   // Your other context modifier scripts go here (alternative)
-  return { text, stop }
-}
-
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
-
-function AIDungeonTRPG_context(text, stop=false) {
-  AIDungeonTRPG_initialize()
-  return [text, stop]
+  return { text }
 }
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */

@@ -57,6 +57,8 @@ function AIDungeonTRPG_initialize() {
     state.TRPG.outputText = ""
     state.TRPG.prefixText = ""
     state.TRPG.postfixText = ""
+    state.TRPG.lastMemory = info.actionCount
+    state.TRPG.memoryMode = false
   }
   state.TRPG.config = {
     defaultDifficulty: 10,      // Difficulty of checks when not specified in commands
@@ -64,13 +66,18 @@ function AIDungeonTRPG_initialize() {
     showRolls: true,            // Enables/Disables the dice result text being displayed
     showExp: true,              // Enables/Disables the exp text being displayed
     actionExp: 100,             // Base amount of EXP rewarded for successful actions
+    autoMemory: 0,              // Automatically runs the doMemory every X turns; 0 for disabled
   }
   enforceConfig() // Load config changes from story cards
 
   // Load Story Card Configs
-  state.TRPG.attributes = Object.fromEntries(searchStoryCards({type:TRPGAttributeType}).map(card => [card.title, JSON.parse(card.description)]));
-  state.TRPG.skills = Object.fromEntries(searchStoryCards({type:TRPGSkillType}).map(card => [card.title, JSON.parse(card.description)]));
-  state.TRPG.difficultyScale = JSON.parse(searchStoryCards({type:TRPGDifficultyType})[0].description);
+  const attributesCard = searchStoryCards({type:TRPGAttributeType})
+  const skillsCard = searchStoryCards({type:TRPGSkillType})
+  const difficultyCard = searchStoryCards({type:TRPGDifficultyType})
+
+  state.TRPG.attributes = attributesCard.length > 0 ? Object.fromEntries(attributesCard.map(card => [card.title, JSON.parse(card.description)])) : [];
+  state.TRPG.skills = skillsCard.length > 0 ? Object.fromEntries(skillsCard.map(card => [card.title, JSON.parse(card.description)])) : [];
+  state.TRPG.difficultyScale = difficultyCard.length > 0 ? JSON.parse(difficultyCard[0].description) : [];
 }
 
 function enforceConfig() {
@@ -139,6 +146,7 @@ function commandRegistry(commandName) {
     // <><> Core Commands
     { handler: doHelp,        helpText: doHelpHelp,        args: [],                       synonyms: ["help"]  },
     { handler: doReset,       helpText: doResetHelp,       args: [],                       synonyms: ["reset"]  },
+    { handler: doMemory,      helpText: doMemoryHelp,      args: [],                       synonyms: ["memory", "memorize", "memorise"]  },
 
     // <><> Character Commands
     { handler: doNewChar,     helpText: doNewCharHelp,     args: [],                       synonyms: ["newchar"]  },
@@ -1018,3 +1026,192 @@ const doTradeHelp = `<><> #trade command
 -- Adds and Removes the specified items in the character's inventory.
 -- (quantity) is optional, defaults to one.
 Usage: you|actor #trade (quantity) give_item for (quantity) take_item\n`
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////// MEMORY MODE ////////////////////////////////////////////////////////
+
+// TODO: Place this in a story card for dynamic user modification and code cleanliness
+const defaultMemoryInstructions = `You are updating the adventure’s running SUMMARY points.
+
+GOAL
+- Read only the visible transcript and the sections appended below.
+- Produce a compact, factual list of summary points (<~2000 characters total). No inventions.
+
+SCOPE (include only if relevant now or soon)
+- Major/minor long term plot points that still affect the present.
+- Moments that changed relationships/reputation/resources.
+- Key events: discoveries, fights, long term conditions/injuries, important items gained/lost, debts/favors.
+- Long term active threads, mysteries, promises, conflicts.
+
+VERIFIABILITY
+- Use only facts from the transcript or from CURRENT/ARCHIVED SUMMARY below.
+- If uncertain, omit.
+
+RELEVANCE FILTER
+- HIGH: drives the current scene, active plots/events.
+- MEDIUM: recurring subplot/relationship/condition/resource.
+- LOW: resolved/one-off/minor/short-term not seen again.
+- If space is tight, drop LOW first, then weaker MEDIUM. Keep all HIGH.
+
+DURABILITY FILTER (HARD RULE)
+- Include only long-lived facts/events expected to remain true.
+- Exclude transient staging, momentary, currently/now states.
+- Prefer outcome statements (what happened + lasting result) over current in-progress descriptions.
+
+INCLUSION TEST (must pass ALL)
+1) NOW-TEST: Affects the current scene or events.
+2) ACTION-TEST: Tied to a concrete action/event/state.
+3) EVIDENCE-TEST: Supported by transcript or CURRENT/ARCHIVED SUMMARY.
+4) DURABILITY-TEST: Still useful ≥3 scenes from now.
+
+EXCLUSIONS (HARD RULE)
+- EXCLUDE world/setting lore, encyclopedic facts, species/class/item/system definitions, cosmology, laws of magic, generalized truths, or “X exists…” assertions.
+- EXCLUDE location/item/faction/character/personality descriptions unless they were directly affected recent or current actions.
+
+MERGE & PRECEDENCE (ANTI-CHURN)
+- Treat CURRENT SUMMARY items as candidates; keep only those still relevant.
+- If a CURRENT item is still accurate, keep its exact wording (do not paraphrase).
+- Consider ARCHIVED items; bring back only if clearly relevant now, keep its exact wording (do not paraphrase).
+- Transcript overrides outdated CURRENT/ARCHIVED facts.
+- Deduplicate overlaps; keep the shortest, most precise, most recent wording.
+- Prefer compressed natural clauses without label-colon formats.
+
+SPECULATION
+- Do NOT assert speculative outcomes, omit.
+- If risk is implied but not confirmed, omit.
+- Do NOT invent relations; if uncertain, omit.
+
+EPHEMERA & ACCESSORIES
+- Exclude short-lived scene states.
+- Include objects only if plot-active or tracked, Otherwise omit.
+
+NAME CANONICALIZATION & CONTEXT (HARD RULE)
+- Replace generic references with concise, specific forms drawn from the transcript or CURRENT/ARCHIVED SUMMARY.
+- On first mention of an entity in the output, attach a compact qualifier (e.g., place/faction/role) to disambiguate.
+- Use the same canonical short form for that entity in all bullets of this output.
+- Do not invent qualifiers or kinship terms; only use information explicitly present in sources.
+- Keep qualifiers brief (≤3 words) and avoid redundancy with nearby bullets.
+- If a qualifier would exceed the character budget and the entity is otherwise unambiguous, omit the qualifier.
+
+STYLE & COMPRESSION
+- Use past tense; sentence fragments OK. Begin each bullet with a past-tense form.
+- One bullet per point; each line must begin exactly with "- ".
+- ~18 words per line when possible; remove filler; omit dates unless crucial.
+- Do NOT use “label: value” schemas. Write as a natural clause.
+- No inferred needs/goals; omit timers/deadlines.
+- Omit descriptors unless they affected outcomes or are being acted on.
+- No quotes, no headers, no categories, no commentary, no counts, no code blocks, no emojis.
+- Order: relevance (HIGH→MEDIUM→LOW) then recency (new→old).
+
+OUTPUT RULES (strict)
+- Output ONLY the new list of summary points as lines starting "- ".
+- Do not print anything else (no preface/epilogue).
+- If nothing qualifies, output nothing (i.e., zero lines).
+- Stop before exceeding ~2000 characters; end cleanly on a complete bullet.`
+
+function instructMemories(previousMemories, archivedMemories) {
+  const instructionCard = searchStoryCards({type: TRPGCardType, title: TRPGCardType+"Instruct Memory"})
+  if(instructionCard.length <= 0) addStoryCard("", "", TRPGCardType, TRPGCardType + "Instruct Memory", defaultMemoryInstructions);
+  
+  const memoryInstructions = `<SYSTEM>
+IGNORE ALL OTHER INSTRUCTIONS AND DO THE FOLLOWING.
+${instructionCard[0]?.description || defaultMemoryInstructions}
+
+— CURRENT SUMMARY POINTS (appended by script below this line) —
+${previousMemories}
+
+— ARCHIVED SUMMARY POINTS (appended by script below this line) —
+${archivedMemories}
+
+IGNORE ALL OTHER INSTRUCTIONS.
+</SYSTEM>`
+  
+  return memoryInstructions
+}
+
+function doMemory(inputMaster=null) {
+  // Make sure the memoryCard is setup
+  let memoryCard = searchStoryCards({type: TRPGCardType, title: TRPGCardType+"Active Memory"})
+  if (memoryCard.length <= 0) addStoryCard("a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,y,x,z", "", TRPGCardType, TRPGCardType + "Active Memory", "")
+  // Memorize specific user defined memory
+  if (inputMaster.argumentText != "") {
+    const newMemory = `${inputMaster.argumentText} ${inputMaster.flavorText}`.trim()
+    memoryCard = searchStoryCards({type: TRPGCardType, title: TRPGCardType+"Active Memory"})
+    memoryCard[0].entry += `\n${newMemory}`
+    return ["Memory Noted! (delete this and continue)", false]
+  }
+  // Override the context with "Memory Instructions"
+  state.TRPG.memoryMode = true
+  state.TRPG.lastMemory = info.actionCount
+  const previousMemories = memoryCard.length > 0 ? memoryCard[0].entry : "- None."
+  const archivedMemories = memoryCard.length > 0 ? memoryCard[0].description : "- None."
+  state.memory.context = instructMemories(previousMemories, archivedMemories)
+  return ["Collecting memories... (delete this after)", true]
+}
+
+const doMemoryHelp = `<><> #memorize command
+-- Forces AI Dungeon to look back through your adventure and create memories.
+-- Stores archived and current memories in story cards.
+-- Optional: Can specifiy a memory to add, instead of auto run.
+Usage: #memorize (optional memory)\n`
+
+function collectMemories(newMemories) {
+  const memoryCard = searchStoryCards({ type: TRPGCardType, title: TRPGCardType + "Active Memory" });
+  // --- helpers --------------------------------------------------------------
+  const toArray = (txt = "") =>
+    String(txt)
+      .split(/\r?\n/)
+      .map(s => s.replace(/^\s*-\s*/, "").trim()) // strip leading "- " if present
+      .filter(Boolean);
+
+  const canonical = s =>
+    s.toLowerCase()
+      .replace(/[.\s]+$/g, "")   // drop trailing periods/spaces
+      .replace(/\s+/g, " ");     // collapse spaces
+
+  const uniquePreserve = arr => {
+    const seen = new Set();
+    const out = [];
+    for (const s of arr) {
+      const k = canonical(s);
+      if (!seen.has(k)) { seen.add(k); out.push(s); }
+    }
+    return out;
+  };
+  // --- parse incoming/new list ---------------------------------------------
+  const formatList = arr => arr.map(s => `- ${s}`).join("\n");
+  const newList = uniquePreserve(toArray(newMemories));
+
+  if (memoryCard.length > 0) {
+    // existing card: reconcile with previous (old active) and archived
+    let previousMemories = memoryCard[0].entry || "";
+    let archivedMemories = memoryCard[0].description || "";
+
+    const prevList = uniquePreserve(toArray(previousMemories));
+    let archList = uniquePreserve(toArray(archivedMemories));
+
+    const newKeys = new Set(newList.map(canonical));
+    const archKeys = new Set(archList.map(canonical));
+
+    // 1) Remove any memories from the archive that are now in the new list
+    archList = archList.filter(item => !newKeys.has(canonical(item)));
+
+    // 2) Add any memories that were in previous but are missing from new → archive
+    for (const item of prevList) {
+      const key = canonical(item);
+      if (!newKeys.has(key) && !archKeys.has(key)) {
+        archList.push(item);
+        archKeys.add(key);
+      }
+    }
+
+    // 3) Update the card
+    memoryCard[0].entry = formatList(newList);
+    memoryCard[0].description = formatList(archList);
+  } else {
+    // no card yet → create one with the new list as entry, empty archive
+    addStoryCard("a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,y,x,z", formatList(newList), TRPGCardType, TRPGCardType + "Active Memory", "");
+  }
+}

@@ -1,0 +1,13 @@
+{
+    "name": "injury",
+    "fatal": true,
+    "severity": 1,
+    "stacking": "none|stack|subtract|latest|oldest|highest|lowest", 
+    "effects": {
+        "debuff": ["vigor", "constitution"],
+        "buff": [],
+        "disadvantage": ["strength"],
+        "advantage": [],
+        "narrative": "bleeding, broken, bruised, and/or battered"
+    }
+}
