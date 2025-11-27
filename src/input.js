@@ -21,21 +21,20 @@ function AIDungeonTRPG_input(text, stop=false) {
   state.message = "" // Clear the message bank
   AIDungeonTRPG_initialize()
   // No "#" means no command
-  if (!text.match(hasRegex)) {
-    const sinceLast = info.actionCount-state.TRPG.lastMemory
-    if (state.TRPG.autoMemory > 10 && sinceLast >= state.TRPG.autoMemory) {
-      doMemory()
-    }
+  if (!text.match(hasCommandRegex)) {
     return [text, stop]
   }
 
   try {
     // Parse text into blocks, then find the command entry
-    const inputMaster = commandExtract(text)
+    let inputMaster = commandExtract(text)
+
+    // Get commandEntry (defaults to doTry action)
+    const commandEntry = commandRegistry(inputMaster.commandName)
 
     // Where showInput replaces input text, and showOutput controls output display
-    let [showInput, showOutput] = inputMaster.commandEntry.handler(inputMaster)
-    if (showInput) text = showInput+" "+inputMaster.flavorText
+    let [showInput, showOutput] = commandEntry.handler(inputMaster)
+    text = inputMaster.cleanInput // Removes symbols
     state.TRPG.showOutput = showOutput
 
   } catch (err) {

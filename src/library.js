@@ -10,40 +10,13 @@
 ///////////////////////////////////////////////////////// CONSTANTS /////////////////////////////////////////////////////////
 
 // Keywords
-const attributesKeyword = "attributes"
 const skillsKeyword = "skills"
-const invKeyword = "inventory"
-const infoKeyword = "info"
-const difficultyKeyword = "difficulty"
 
 // Constants
 const TRPGCardType = "TRPG"
-const TRPGCharacterType = `${TRPGCardType} - character`
-const TRPGAttributeType = `${TRPGCardType} - ${attributesKeyword}`
-const TRPGSkillType = `${TRPGCardType} - ${skillsKeyword}`
-const TRPGDifficultyType = `${TRPGCardType} - ${difficultyKeyword}`
-const TRPGItemType = `${TRPGCardType} - item`
 
 // Regex
-const hasRegex = (/(?:^|\s)#\w+/);                          // Check if there's a '#' at the start of any word (not mid-word)
-const inputRegex = (/^(.*?)\s*#(\w+)([^.]*)\.?\s*(.*)$/s);  // Match: actor, #command, arguments (until .), flavor
-const parenthesesWholeRegex = (/\(.*?\)/g);                 // Matches whole (parentheses)
-const parenthesesInnerRegex = (/\((.*?)\)/g);               // Matches parentheses content
-const matchSpaceRegex = (/\s+/);                            // Matches one or more whitespace characters
-const matchNumberRegex = (/^\d+$/);                         // Matches a string that is entirely a number (digits only)
-const spacePunctuation = (/([,;:.!?])/g);                   // Matches punctuation (commas, semicolons, periods, etc.)
-const matchPunctution = (/^[;:.!?]$/);                      // Matches discard punctuation (semicolons, periods, etc.)
-
-// Meta Lookups; to use and parse meta args in input
-const advantageNames = ["advantage", "disadvantage"]
-const metaArgs = [
-    { difficulty: { types: ["difficulty","number"], req: false } },
-    { vantage: { types: ["vantage"], req: false } },
-]
-
-// Prepositions Phrases
-const leadingArticles = ["a", "an", "the"];
-const tailingArticles = ["from", "to", "on", "in", "at", "with"];
+const hasCommandRegex = (/(?:^|\s)#\w+/);                          // Check if there's a '#' at the start of any word (not mid-word)
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
@@ -57,27 +30,13 @@ function AIDungeonTRPG_initialize() {
     state.TRPG.outputText = ""
     state.TRPG.prefixText = ""
     state.TRPG.postfixText = ""
-    state.TRPG.lastMemory = info.actionCount
-    state.TRPG.memoryMode = false
   }
+  state.TRPG.actorName = "You"  //TODO: Fix hardcoded "You" to character name
   state.TRPG.config = {
-    defaultDifficulty: 10,      // Difficulty of checks when not specified in commands
     defaultCheckDice: 20,       // Dice / Range to use for making checks
-    showRolls: true,            // Enables/Disables the dice result text being displayed
-    showExp: true,              // Enables/Disables the exp text being displayed
     actionExp: 100,             // Base amount of EXP rewarded for successful actions
-    autoMemory: 0,              // Automatically runs the doMemory every X turns; 0 for disabled
   }
   enforceConfig() // Load config changes from story cards
-
-  // Load Story Card Configs
-  const attributesCard = searchStoryCards({type:TRPGAttributeType})
-  const skillsCard = searchStoryCards({type:TRPGSkillType})
-  const difficultyCard = searchStoryCards({type:TRPGDifficultyType})
-
-  state.TRPG.attributes = attributesCard.length > 0 ? Object.fromEntries(attributesCard.map(card => [card.title, JSON.parse(card.description)])) : [];
-  state.TRPG.skills = skillsCard.length > 0 ? Object.fromEntries(skillsCard.map(card => [card.title, JSON.parse(card.description)])) : [];
-  state.TRPG.difficultyScale = difficultyCard.length > 0 ? JSON.parse(difficultyCard[0].description) : [];
 }
 
 function enforceConfig() {
@@ -144,22 +103,11 @@ function getRandomFloat(min, max) {
 function commandRegistry(commandName) {
   const registry = [
     // <><> Core Commands
-    { handler: doHelp,        helpText: doHelpHelp,        args: [],                       synonyms: ["help"]  },
-    { handler: doReset,       helpText: doResetHelp,       args: [],                       synonyms: ["reset"]  },
-    { handler: doMemory,      helpText: doMemoryHelp,      args: [],                       synonyms: ["memory", "memorize", "memorise"]  },
-
-    // <><> Character Commands
-    { handler: doNewChar,     helpText: doNewCharHelp,     args: [],                       synonyms: ["newchar"]  },
-    { handler: doDeleteChar,  helpText: doDeleteCharHelp,  args: [],                       synonyms: ["delchar"]  },
+    { handler: doHelp,        helpText: doHelpHelp,        synonyms: ["help"]  },
+    { handler: doReset,       helpText: doResetHelp,       synonyms: ["reset"]  },
 
     // <><> Skills & Abilities
-    { handler: doTry,         helpText: doTryHelp,         args: tryCommandSpec,           synonyms: ["try", "attempt"] },
-
-    // <><> Inventory & Currency
-    { handler: doTake,        helpText: doTakeHelp,        args: takeAndDropCommandSpec,   synonyms: ["take", "steal", "get", "grab", "receive", "pocket", "bag", "stow", "aquire", "obtain"] },
-    { handler: doDrop,        helpText: doDropHelp,        args: takeAndDropCommandSpec,   synonyms: ["discard", "drop", "leave", "dispose", "trash", "donate", "eat", "consume", "use", "drink", "pay", "lose"] },
-    { handler: doTrade,       helpText: doTradeHelp,       args: tradeCommandSpec,         synonyms: ["trade", "swap", "exchange"] },
-    // { handler: doGive,        helpText: doGiveHelp,        args: giveCommandSpec,          synonyms: ["give", "pass"] },
+    { handler: doTry,         helpText: doTryHelp,         synonyms: ["try", "attempt"] },
   ]
 
   // Handles searching of the command registry if needed
@@ -169,43 +117,23 @@ function commandRegistry(commandName) {
       return entry;
     }
   }
-  return null
+
+  // Defaults to doTry if no valid command is found
+  return registry.find(e => e.handler === doTry);
 }
 
 function commandExtract(rawText) {
-  // Match: actor, #command, arguments (until .), flavor
-  rawText = rawText.replace("> ", "");
-  const match = rawText.match(inputRegex);
+  // Extract command name
+  const commandName = rawText.match(/#(\S+)/)[1];
+  const targetNames = rawText.match(/@(\S+)/);
 
-  if (!match) return [null, null, null, null, null];
-
-  const actorText = match[1].trim();
-  const commandName = match[2].trim();
-  let argumentText = match[3].trim();
-  const flavorText = match[4].trim();
-
-  // Extract all parentheticals; Merge multiple () blocks into a single string
-  const metaMatches = [...argumentText.matchAll(parenthesesInnerRegex)].map(m => m[1].trim());
-  const metaText = metaMatches.join(" ").trim() || null;
-  argumentText = argumentText.replace(parenthesesWholeRegex, "").trim(); // Remove parentheticals
-
-  // Parse Command Args, and Load Character
-  const character = loadCharacter(actorText)
-  const commandEntry = commandRegistry(commandName)
-  const parsedArgs = parseArgs(commandEntry.args, argumentText)
-  const parsedMeta = parseArgs(metaArgs, metaText)
+  // Clean input (remove symbols)
+  const cleanInput = rawText.replace(/(?<!\w)[#@](?=\w)/g, '');
   
   return {
-    actorText,    // Raw text containing character name / actor
-    character,    // Loaded character from the actorText (defaults to blank)
-    commandName,  // #command being called
-    commandEntry, // Command Registery Entry determined for the #commandName
-    argumentText, // Raw text potentially containing arguments for the command
-    parsedArgs,   // Parsed argumentText into named arguments for use in the command
-    flavorText,   // Flavor text after period in player input
-    metaText,     // Raw meta text which was in ()
-    parsedMeta,   // Parsed metaText () into variables (dc, vantage)
-    rawText       // Raw unedit player input text
+    commandName,    // #command referenced in input
+    targetNames,    // @targets referenced in input
+    cleanInput      // Raw unedit player input text
   };
 }
 
@@ -238,228 +166,23 @@ function searchStoryCards({ type = null, title = null, exactType = true, exactTi
   });
 }
 
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////// ARGS PARSER ////////////////////////////////////////////////////////
-
-// Helpers for type checks
-const isNumber = (t) => !Number.isNaN(t);
-const isVantage = (t) => advantageNames.some(k => k.toLowerCase() === t.toLowerCase());
-const isDC = (t) => Object.keys(state.TRPG.difficultyScale).some(k => k.toLowerCase() === t.toLowerCase());
-const isBoolean = (t) => typeof t === "boolean" || (typeof t === "string" && ["true", "false"].includes(t.toLowerCase()));
-const isItem = (t) => searchStoryCards({ type: TRPGItemType, title: singularize(t) }).length > 0;
-const isSpell = (t) => searchStoryCards({ type: "spell", title: t }).length > 0;
-const isCharacter = (t) => validateCharacter(t) > 0;
-const isAttribute = (t) => Object.keys(state.TRPG.attributes).some(k => k.toLowerCase() === t.toLowerCase());
-const isSkill = (t) => Object.keys(state.TRPG.skills).some(k => k.toLowerCase() === t.toLowerCase());
-
-const typeCheckers = [
-  { type: "number",          fn: isNumber,     hascards: false,  fallback: false,  singularize: false },
-  { type: "boolean",         fn: isBoolean,    hascards: false,  fallback: false,  singularize: false },
-  { type: difficultyKeyword, fn: isDC,         hascards: false,  fallback: false,  singularize: false },
-  { type: "vantage",         fn: isVantage,    hascards: false,  fallback: false,  singularize: false },
-  { type: "item",            fn: isItem,       hascards: true,   fallback: true,   singularize: true },
-  { type: "spell",           fn: isSpell,      hascards: true,   fallback: false,  singularize: false },
-  { type: "character",       fn: isCharacter,  hascards: true,   fallback: false,  singularize: false },
-  { type: attributesKeyword, fn: isAttribute,  hascards: true,   fallback: false,  singularize: false },
-  { type: skillsKeyword,     fn: isSkill,      hascards: true,   fallback: false,  singularize: false }
-];
-
-function guessType(variable) {
-  for (const { type, fn } of typeCheckers) {
-    if (fn(variable)) return type;
+function card2json(cardContent) {
+  const lineSplits = cardContent.split("\n")
+  const jsonOutput = {}
+  for (const i in lineSplits) {
+    const line = lineSplits[i]
+    const colonSplit = line.split(":")
+    jsonOutput[colonSplit[0]] = colonSplit[1].trim()
   }
-  return "string";
+  return jsonOutput
 }
 
-function normalizeTokens(argumentText) {
-  return argumentText
-    .replace(spacePunctuation, " $1 ")
-    .split(matchSpaceRegex)
-    .map(t => t.trim())
-    .filter(Boolean)
-    .filter(t => !matchPunctution.test(t)) // discard punctuation-only tokens (keep commas)
-}
-
-function parseArgs(commandSpec, argumentText) {
-  if (!commandSpec || commandSpec.length === 0 || !argumentText) return [];
-  let tokens = normalizeTokens(argumentText)
-
-  const parsedArgs = {}
-  for (const entry of commandSpec) {
-    const [key, spec] = Object.entries(entry)[0]
-    // --- Case 1: Set ---
-    if (spec.args) {
-      const [setTokens, leftTokens] = extractSetTokens(tokens, spec.setDelimiters)
-      tokens = leftTokens
-      if (spec.multi) {
-        const clauses = splitByDelimiters(setTokens, spec.elementDelimiters)
-        parsedArgs[key] = clauses.map(clause => parseSetArgs(spec.args, clause) )
-      } else {
-        parsedArgs[key] = parseSetArgs(spec.args, setTokens)
-      }
-      if (spec.req && (!parsedArgs[key] || parsedArgs[key].length === 0)) {
-        throw new Error(`Missing required set: ${key}`)
-      }
-    }
-    // --- Case 2: Single Arg ---
-    else {
-      const { value, matchedCard, matchType, span } = matchArgument(spec.types, tokens)
-      if (spec.req && !value) {
-        throw new Error(`Missing required argument: ${key}`)
-      }
-      parsedArgs[key] = {
-        value: value,
-        type: matchType,
-        card: matchedCard ? JSON.parse(matchedCard.description) : null
-      }
-      if (span) tokens.splice(span[0], span[1] - span[0])
-    }
+function json2card(jsonData) {
+  let stringBuilder = ""
+  for (const key in jsonData) {
+    stringBuilder += `${key}: ${jsonData[key]}\n`
   }
-  return parsedArgs
-}
-
-function parseSetArgs(argSpecs, clauseTokens) {
-  const result = {}
-  for (const argSpec of argSpecs) {
-    const { value, matchedCard, matchType, span } = matchArgument(argSpec.types, clauseTokens)
-    if (argSpec.req && !value) {
-      throw new Error(`Missing required argument in set: ${argSpec.name}`)
-    }
-    result[argSpec.name] = {
-      value: value,
-      type: matchType,
-      card: matchedCard ? JSON.parse(matchedCard.description) : null
-    }
-    if (span) clauseTokens.splice(span[0], span[1] - span[0])
-  }
-  return result
-}
-
-function extractSetTokens(tokens, setDelimiters) {
-  if (!setDelimiters || setDelimiters.length === 0) return [[...tokens], []]
-  const idx = tokens.findIndex(t => setDelimiters.includes(t.toLowerCase()))
-  if (idx === -1) return [[...tokens], []]
-  const setTokens = tokens.slice(0, idx) // up to the set delimiter
-  const newTokens = tokens.toSpliced(0, idx+1) // without delimiter
-  console.log(setTokens, newTokens)
-  return [setTokens, newTokens]
-}
-
-function splitByDelimiters(tokens, delimiters) {
-  if (!delimiters || delimiters.length === 0) return [tokens]
-
-  const clauses = []
-  let current = []
-
-  for (const token of tokens) {
-    if (delimiters.includes(token.toLowerCase())) {
-      if (current.length > 0) {
-        clauses.push(current)
-        current = []
-      }
-    } else {
-      current.push(token)
-    }
-  }
-
-  if (current.length > 0) clauses.push(current)
-
-  return clauses
-}
-
-// Unified matcher for arguments
-function matchArgument(argTypes, tokens) {
-  let value = null;
-  let matchedCard = null;
-  let matchType = null;
-  let span = null;
-  
-  // Check All Types
-  for (const type of argTypes) {
-    const checker = typeCheckers.find(tc => tc.type == type)
-    
-    // 1) Storycard + multi-word handling
-    if (checker.hascards) {
-      const cardMatch = findBestCardMatch(type, checker, tokens);
-      if (cardMatch) {
-        value = checker.fallback ? tokens.join(" ") : cardMatch.card.title;
-        matchedCard = cardMatch.card;
-        span = checker.fallback ? [0, tokens.length] : cardMatch.span;
-        matchType = type;
-      }
-    }
-
-    // 2) Single-token type check
-    if (!value) {
-      for (let i = 0; i < tokens.length; i++) {
-        if (checker.fn(tokens[i]) || type === "string") {
-          value = type == "number" ? (Number(tokens[i]) || null) : tokens[i];
-          span = [i, i + 1];
-          matchType = type;
-          break;
-        }
-      }
-    }
-
-    // 3) Fallback (multi-word items)
-    if (!value && checker.fallback) {
-      const fallback = fallbackItemExtraction(tokens); // now returns clean phrase
-      if (fallback) {
-        value = fallback;
-        span = [0, tokens.length]; // consume the whole clause
-        matchType = type;
-      }
-    }
-  }
-
-  return { value, matchedCard, matchType, span };
-}
-
-// Helper: find best storycard match for a given type
-function findBestCardMatch(type, checker, tokens) {
-  if (!tokens.length) return null;
-  const titles = storyCards.filter(c => c.type.toLowerCase() === `${TRPGCardType} - ${type}`.toLowerCase()).map(c => c.title.toLowerCase());
-  if (!titles.length) return null;
-  // Try all n-grams from longest to shortest
-  for (let n = tokens.length; n > 0; n--) {
-    for (let i = 0; i <= tokens.length - n; i++) {
-      let phrase = tokens.slice(i, i + n).join(" ").toLowerCase();
-      if (checker.singularize) phrase = singularize(phrase)
-      if (titles.includes(phrase)) {
-        const card = storyCards.find(c => c.title.toLowerCase() === phrase);
-        return { match: phrase, card, span: [i, i + n] };
-      }
-    }
-  }
-  return null;
-}
-
-// Smarter fallback for item names
-function fallbackItemExtraction(tokens) {
-  let words = [...tokens]; // default to cleaned tokens
-
-  // 1. If first token is a number, drop it
-  if (matchNumberRegex.test(words[0])) {
-    words.shift();
-  }
-
-  // 2. Remove leading articles
-  while (words.length && leadingArticles.includes(words[0].toLowerCase())) {
-    words.shift();
-  }
-
-  // 3. Remove trailing prepositional phrases
-  let cutoff = words.length;
-  for (let i = 0; i < words.length; i++) {
-    if (tailingArticles.includes(words[i].toLowerCase())) {
-      cutoff = i;
-      break;
-    }
-  }
-
-  return words.slice(0, cutoff).join(" ");
+  return stringBuilder.trim()
 }
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
@@ -535,31 +258,20 @@ function singularize(word, makeSingle = true) {
 ///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////// CORE COMMANDS ///////////////////////////////////////////////////////
 
-function allCommandsHelp() {
+function doHelp(inputMaster) {
   let textBuilder = "This is a list of all commands, and their synonyms:\n\n"
   for (let entry of commandRegistry()) {
     textBuilder += `#${entry.synonyms[0]}\n[${entry.synonyms.join(", ")}]\n\n`
   }
   textBuilder += "You can use #help followed by a command name for specific info; e.g. '#help help'.\n\n"
-  return textBuilder
-}
-
-function doHelp(inputMaster) {
-  const helpType = inputMaster.argumentText
-  const cmdEntry = commandRegistry(helpType)
-  if (helpType != "" && cmdEntry != null) {
-    state.TRPG.outputText = `${cmdEntry.helpText}\nSynonyms: [${cmdEntry.synonyms.join(", ")}]`
-  } else {
-    state.TRPG.outputText = allCommandsHelp()
-  }
+  state.TRPG.outputText = textBuilder
   return [null, true]
 }
 
 const doHelpHelp = `<><> #help command
--- Displays help information for a specific command.
--- OR synonym list for all commands, if none specified.
+-- Displays help information for all commands.
 -- I see you're already a master of the help command ;)
-Usage: #help (command)\n`
+Usage: #help\n`
 
 function doReset(inputMaster) {
   state.TRPG = null
@@ -574,644 +286,147 @@ Usage: #reset\n`
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 ///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////// CHARACTER COMMANDS /////////////////////////////////////////////////////
-
-function characterTemplate(name) {
-  return {
-    info: {
-      name: name.trim(),
-      class: "Adventurer",
-      level: 0
-    },
-    attributes: {... state.TRPG.attributes},
-    skills: {... state.TRPG.skills},
-    inventory: {}
-  };
-}
-
-function loadCharacter(name) {
-  const character = characterTemplate(name)
-  const dynamicSections = [invKeyword]
-  for (const sectionKey in character) {
-    const searchTitle = `${name} - ${sectionKey}`
-    const cards = searchStoryCards({type: TRPGCharacterType, title: searchTitle})
-    if (cards.length > 0) {
-      try {
-        const sectionContent = JSON.parse(cards[0].description)
-        const keysFrom = dynamicSections.includes(sectionKey) ? sectionContent : character[sectionKey]
-        for (const key in keysFrom) {
-          character[sectionKey][key] = sectionContent[key] ?? character[sectionKey][key]
-        }
-    } catch {
-        throw new Error(`${searchTitle} card entry is invalid JSON!`)
-    }
-    } // ELSE: Allow for loading blank/partial characters
-  }
-    // Update and calculate any edits of levels/exp for attributes & skills
-    for (const fieldKey in character[attributesKeyword]) {
-      addExperience(character, 0, attributesKeyword, fieldKey)
-    }
-        for (const fieldKey in character[skillsKeyword]) {
-          addExperience(character, 0, skillsKeyword, fieldKey, character[skillsKeyword][fieldKey].attribute)
-  }
-  return character
-}
-
-function updateCharacter(character) {
-  if (validateCharacter(character.info.name) > 0) {
-    for (const sectionKey in character) {
-    const cardContent = JSON.stringify(character[sectionKey], null, 2);
-    const cardName = `${character.info.name} - ${sectionKey}`
-    const cardIndex = storyCards.findIndex(card => card.title.toLowerCase() === cardName.toLowerCase() && card.type === TRPGCharacterType);
-    if (cardIndex < 0) {
-        addStoryCard("", "", TRPGCharacterType, cardName, cardContent); // Repair missing cards
-    } else {
-      updateStoryCard(cardIndex, "", "", TRPGCharacterType, cardName, cardContent);
-  }
-}
-  }
-}
-
-function doNewChar(inputMaster) {
-  // Validate character name
-  const name = inputMaster.actorText?.trim();
-  if (!name) throw new Error("Error: No character name detected!");
-
-  // Setup new character template
-  const newCharacter = characterTemplate(name);
-
-  // Prevent duplicate characters
-  if (validateCharacter(name) > 0) {
-    throw new Error(`Error: Character ${name} already exists!`);
-  }
-
-  // Create story cards
-  for (const sectionKey in newCharacter) {
-    const cardName = `${name} - ${sectionKey}`;
-    const cardContent = JSON.stringify(newCharacter[sectionKey], null, 2);
-    addStoryCard("", "", TRPGCharacterType, cardName, cardContent);
-  }
-
-  return [`Character '${name}' has been created!`, false];
-}
-
-const doNewCharHelp = `<><> #newChar command
--- Creates a new blank character with story cards.
-Usage: character_name #newChar\n`
-
-function doDeleteChar(inputMaster) {
-  // Check for a valid character name
-  const name = inputMaster.actorText?.trim();
-  if (!name) throw new Error("Error: No character name detected!");
-
-  // Setup new character template
-  const newCharacter = characterTemplate(name)
-
-  // Check that character cards do not exist
-  for (const sectionKey in newCharacter) {
-    const searchTitle = `${name} - ${sectionKey}`.toLowerCase()
-    const cardIndex = storyCards.findIndex(card => card.title.toLowerCase() === searchTitle && card.type === TRPGCharacterType);
-    if (cardIndex >= 0) removeStoryCard(cardIndex)
-  }
-
-  return [`Character '${name}' has been deleted!`, false]
-}
-
-const doDeleteCharHelp = `<><> #delChar command
--- Deletes a character's story cards.
-Usage: character_name #delChar\n`
-
-function validateCharacter(name) {
-  let cardCount = 0
-  if (!name) return cardCount
-  for (const sectionKey in characterTemplate(name)) {
-    if (searchStoryCards({ type: TRPGCharacterType, title: `${name} - ${sectionKey}`}).length > 0) {
-      cardCount++
-    }
-  }
-  return cardCount
-}
-
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////// ATTRIBUTE MOD ///////////////////////////////////////////////////////
-
-function getAttributeMod(character, attributeName) {
-  const attributeBase = state.TRPG.attributes[attributeName].level
-  const charAttribute = character[attributesKeyword][attributeName].level
-  return Math.floor((charAttribute - attributeBase) / 2)
-}
-
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////// EXP|LVL //////////////////////////////////////////////////////////
-
-function getExpForLevel(level) {
-  // This gives the level progression of: 1=300, 2=1000, 3=2200, 5=7700, 10=53000, 20=406000
-  // OR actions based on actionXP of 100: 1=3  , 2=10  , 3=22  , 5=77  , 10=530  , 20=4060
-  return Math.floor(Math.round((level ** 3) * 50 + (level*300)) / 100)*100;
-}
-
-function addExperience(character, exp, statType, statValue, statAttribute=null) {
-  const possessiveName = character.info.name.toLowerCase() == "you" ? "Your" : character.info.name+"'s"
-  let expText = `[${possessiveName} ${statValue} has gained ${exp}xp`
-
-  // Calculate total exp for current level (minus base for attributes)
-  const statObject = character[statType][statValue]
-  let statLevel = statObject.level
-  let baseLevel = 0
-  if (statType == attributesKeyword) {
-    baseLevel = state.TRPG.attributes[statValue].level
-    statLevel -= baseLevel
-  }
-  const totalExp = getExpForLevel(statLevel) + statObject.exp + exp
-  
-  // Apply and Handle leveling up and leveling down
-  let levelAdjustment = 0
-  while (totalExp >= getExpForLevel(statLevel+levelAdjustment+1)) { levelAdjustment += 1 }
-  while (totalExp <= getExpForLevel(statLevel+levelAdjustment-1)) { levelAdjustment -= 1 }
-  if (levelAdjustment != 0) {
-    statObject.level += levelAdjustment
-    if (statObject.level < 0) statObject.level = 0
-    expText += `; ${statValue} is now level ${statObject.level}`
-  }
-
-  // Apply EXP and ensure non-negative
-  statObject.exp = totalExp - getExpForLevel(statObject.level-baseLevel)
-  if (statObject.exp < 0) statObject.exp = 0
-  expText += `; ${getExpForLevel(statObject.level-baseLevel+1)-statObject.exp}xp until next level]`
-
-  // Handle attributes if one was provided
-  if(statAttribute != null) {
-    const attributeExp = Math.floor(exp*0.5)
-    expText += "\n"+addExperience(character, attributeExp, attributesKeyword, statAttribute)
-  }
-
-  // Handle overall character level
-  const newLevel = characterLevel(character)
-  if (character[infoKeyword].level != newLevel) {
-    expText += `\n[${possessiveName} level has increase to ${newLevel}!]`
-  }
-  character[infoKeyword].level = newLevel
-  // Handle text result
-  return expText
-}
-
-function characterLevel(character) {
-  let sum = 0
-  for (attribute in character[attributesKeyword]) {
-    const base = state.TRPG.attributes[attribute].level
-    sum += character[attributesKeyword][attribute].level - base || 0
-  }
-  const K = Object.values(character[attributesKeyword]).length;
-  return Math.floor(sum / K);
-}
-
-function determineExp(score, success, difficulty) {
-  const config = state.TRPG.config
-  const baseExp = config.actionExp * (difficulty / (config.defaultCheckDice/2));
-  
-  if (score == 1 || score < difficulty/2) return 0
-  if (score == config.defaultCheckDice) return baseExp*2
-  if (!success) return Math.floor(baseExp * 0.1)
-  if (score <= difficulty) return baseExp
-  
-  const bonus = Math.min(1.5, score / difficulty)
-  return Math.floor(baseExp*bonus)
-}
-
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////// TRY COMMAND ////////////////////////////////////////////////////////
 
-const tryCommandSpec = [
-  { checkType: { types: ["skills","attributes"], req: false } }
-]
+const doTryHelp = `<><> #try command
+-- Performs a check by rolling 1d20 against an AI determined difficulty.
+-- AI determines advantages and hinderences that may increase or reduce difficulty.
+-- If the actor is not a character, no skill reductions are made, defaulkt actor is You.
+Usage: you|actor #try ... \n`
 
 function doTry(inputMaster) {
   const config = state.TRPG.config
-  const checkType = inputMaster.parsedArgs.checkType
-  const character = inputMaster.character
-  
-  // Calculate the check mods
-  let checkMod = 0
-  if (checkType.type && checkType.value) {
-  if (checkType.type == skillsKeyword) {
-      checkMod = character[checkType.type][checkType.value].level
-    checkMod += getAttributeMod(character, checkType.card.attribute)
-    } else if (checkType.type == attributesKeyword) {
-      checkMod = getAttributeMod(character, checkType.value)
-    }
-  }
 
-  // Roll dice
-  const diceRoll1 = getRandomInteger(1, config.defaultCheckDice)
-  const diceRoll2 = getRandomInteger(1, config.defaultCheckDice)
+  // Get the list of character skills
+  const skillsCard = searchStoryCards({type: TRPGCardType, title: `${state.TRPG.actorName} - ${skillsKeyword}`})
+  const infoCard = searchStoryCards({type: TRPGCardType, title: `${state.TRPG.actorName} - Info`})
 
-  // Check Difficulty
-  const vantage = inputMaster.parsedMeta.vantage?.value ?? null
-  const difficulty = inputMaster.parsedMeta.difficulty?.value ?? config.defaultDifficulty
+  const skillsList = (skillsCard.length > 0) ? skillsCard[0].entry : []
+  const charLevel = (infoCard.length > 0) ? parseInt(infoCard[0].entry.match(/Level:\s*(\d+)/)[1]) : 1
 
-  const advScore = vantage?.toLowerCase() == "advantage" ? Math.max(diceRoll1, diceRoll2) : null
-  const disScore = vantage?.toLowerCase() == "disadvantage" ? Math.min(diceRoll1, diceRoll2) : null
+  // Pre-roll a dice value
+  const diceRoll = getRandomInteger(1, config.defaultCheckDice)
 
-  const score = vantage ? advScore ?? disScore : diceRoll1
-  const success = score == config.defaultCheckDice ? true : score == 1 ? false : (score + checkMod >= difficulty)
-
-  // Result
-  const critText = score == config.defaultCheckDice ? "critical " : score == 1 ? "critically " : ""
-  const successText = success ? `with ${critText}success` : `but ${critText}failed`
-  const resultText = `${character.info.name} ${inputMaster.commandName} ${inputMaster.argumentText}, ${successText}.`
-
-  // Show Dice Roll
-  if (state.TRPG.config.showRolls) {
-    const diceText = vantage ? `(${diceRoll1} | ${diceRoll2}) at ${vantage}` : `${diceRoll1}`
-    state.message = `[Roll: ${diceText} + ${checkMod} vs ${difficulty} -- ACTION ${success ? "SUCCEEDED" : "FAILED"}]`
-  }
-
-  // Add actionXP for skill leveling (save only for existing characters)
-  if (checkType.type && checkType.value) {
-  const expGained = determineExp(score, success, difficulty)
-    const expText = addExperience(character, expGained, checkType.type, checkType.value, checkType.card?.attribute ?? null)
-    updateCharacter(character)
-  if (config.showExp && expGained != 0) { state.message += "\n"+expText }
-  }
-
-  return [resultText, true]
+  // Set the context and hope for the best
+  state.memory.authorsNote = tryInstructions(skillsList, diceRoll, charLevel)
+  return [inputMaster.cleanInput, true]
 }
 
-const doTryHelp = `<><> #try command
--- Performs a check by rolling 1d20 against a difficulty.
--- Uses a character's attribute or skill modifier if one is named.
--- If no attribute or skill is given, the roll is made as a general check.
--- Difficulty (DC) and advantage/disadvantage may be defined in meta info ().
--- If advantage/disadvantage is not given, the roll is normal.
--- If the actor is not a character, default attribute|skill values are used.
--- If difficulty is not given, the config default is used.
--- Roll results are prefixed to AI Dungeon output (can be disabled in config).
--- The task/argument text is free form, but arguments are parsed in order.
--- Anything after a period is falvor text and not parsed in the command.
-Usage: you|actor #try ... attribute|skill ... (DC advantage/disadvantage)\n.`
+function tryInstructions(skillList, roll, level) {
+  const tryCard = searchStoryCards({type: TRPGCardType, title: `TRPG - Try Instructions`})
+  if (tryCard.length < 0) throw new Error("Action Failed! Try Instructions card does not exist!")
+  
+  let instructions = tryCard[0].description
+  instructions = instructions.replaceAll("skillList", skillList)
+  instructions = instructions.replaceAll("rollValue", roll)
+  instructions = instructions.replaceAll("levelMod", Math.floor(level / 4))
+  return instructions
+}
+
+// Splits the result block from the story text after try actions (used in output.js)
+const divider = "=====NARRATIVE=====";
+const backupDivider = "Outcome:";
+
+function splitTryResult(outputText) {
+  let idx = outputText.indexOf(divider);
+
+  if (idx === -1) {
+    // Try backup divider
+    const backupIdx = outputText.indexOf(backupDivider);
+    if (backupIdx !== -1) {
+      // Include the whole Outcome: line in the result block
+      const lineEnd = outputText.indexOf("\n", backupIdx);
+      const splitPoint = lineEnd === -1 ? outputText.length : lineEnd + 1;
+
+      return {
+        resultBlock: outputText.slice(0, splitPoint).trim(),
+        narrativeText: outputText.slice(splitPoint).trim()
+      };
+    }
+
+    // No divider found at all
+    return {
+      resultBlock: "",
+      narrativeText: outputText
+    };
+  }
+
+  const resultBlock = outputText.slice(0, idx).trim();
+  const narrativeText = outputText.slice(idx + divider.length).trim();
+  return { resultBlock, narrativeText };
+}
+
+// Saves results block of try action to story cards for viewing (used in output.js)
+function saveActionResult(outputText) {
+  const cardName = "TRPG - Actions";
+
+  // Check for divider
+  if(!outputText.includes(divider) && !outputText.includes(backupDivider)) {
+    return outputText
+  }
+
+  // Split the output text into result and narrative
+  const { resultBlock, narrativeText } = splitTryResult(outputText)
+  log(resultBlock)
+
+  // Find existing TRPG - Actions card
+  const existingIndex = storyCards.findIndex(card => card.title.toLowerCase() === cardName.toLowerCase() && card.type === TRPGCardType);
+  if (existingIndex < 0) {
+    addStoryCard("", resultBlock, TRPGCardType, cardName, "")
+    return narrativeText
+  }
+
+  // Update existing card by appending the new block
+  updateStoryCard(existingIndex, "", resultBlock, TRPGCardType, cardName, "");
+
+  // Apply experience gain
+  addExp(state.TRPG.actorName, resultBlock.includes("SUCCESS"))
+  return narrativeText
+}
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 ///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////// INVENTORY  MANAGEMENT ///////////////////////////////////////////////////
+///////////////////////////////////////////////////////// CHARACTER /////////////////////////////////////////////////////////
 
-function newItem(card=null) {
-  return {
-    category: card ? card.category : "junk",
-    rarity: card ? card.rarity : 1.0,
-    amount: card ? card.amount : 1,
-    level: card ? card.level : 0,
-    dmgType: card ? card.dmgType : "none",
-  }
+function characterTemplate(name, title, level, exp) {
+  return `Name: ${name}\nTitle: ${title}\nLevel: ${level}\nEXP: ${exp}`
 }
-
-function removeItems(character, items) {
-  const messages = []
-  const hasWord = character.info.name.toLowerCase() == "you" ? "have" : "has"
-  // If character is valid, strictly enforce give_item quantity
-  if (validateCharacter(character.info.name) > 0) {
-    for (const index in items) {
-      const itemName = singularize(items[index].item.value.toLowerCase())
-      if (!character.inventory[itemName]) {
-        messages.push(`${character.info.name} ${hasWord}n't got any ${itemName}.`)
-        return [messages, false]
-      } else if (character.inventory[itemName].amount-character.inventory[itemName] < 0) {
-        messages.push(`${character.info.name} ${hasWord}n't enough ${itemName}.`)
-        return [messages, false]
-    }
-  }
-  }
-  // Remove all the items
-  for (const index in items) {
-    const itemData = newItem(items[index].item.card)
-    const itemName = singularize(items[index].item.value.toLowerCase())
-    const itemAmnt = items[index].amount.value ?? itemData.amount
-    const invItem = character.inventory[itemName]
-    // Remove the amount of the item
-    if (invItem) {
-      invItem.amount -= itemAmnt
-      if (invItem.amount <= 0)
-        delete character.inventory[itemName]
-    }
-    // Handle drop text output
-    const qtyName = character.inventory[itemName]?.amount > 1 ? singularize(itemName, false) : itemName
-    messages.push(`${character.info.name} ${hasWord} ${character.inventory[itemName]?.amount || "no more"} ${qtyName} remaining.`)
-  }
-  return [messages, true]
-}
-
-function addItems(character, items) {
-  const messages = []
-  const hasWord = character.info.name.toLowerCase() == "you" ? "have" : "has"
-  // Loop throough all items
-  for (const index in items) {
-    const itemData = newItem(items[index].item.card)
-    const itemName = singularize(items[index].item.value.toLowerCase())
-    const itemAmnt = items[index].amount.value ?? itemData.amount
-  const invItem = character.inventory[itemName]
-    // Add or Increment Item
-  if (invItem) invItem.amount += itemAmnt
-  else {
-      character.inventory[itemName] = itemData
-    character.inventory[itemName].amount = itemAmnt
-  }
-  // Handle take text output
-  const qtyName = character.inventory[itemName].amount > 1 ? singularize(itemName, false) : itemName
-    messages.push(`${character.info.name} now ${hasWord} ${character.inventory[itemName].amount} ${qtyName}.`)
-  }
-  return messages
-}
-
-const takeAndDropCommandSpec = [
-  {
-    items: {
-      args: [
-        { name: "amount", types: ["number"], req: false },
-        { name: "item",   types: ["item"],   req: true }
-      ],
-      req: true,
-      multi: true,
-      elementDelimiters: [",", "and"],
-      setDelimiters: []
-    }
-  }
-]
-
-function doTake(inputMaster) {
-  const character = inputMaster.character
-  const items = inputMaster.parsedArgs.items
-  const messages = addItems(character, items)
-  state.message = messages.join(' ')
-  const takeText = `[${character.info.name} ${inputMaster.commandName} ${inputMaster.argumentText}.]`
-  updateCharacter(character);
-  return [takeText, true]
-}
-
-const doTakeHelp = `<><> #take command
--- Adds an instance of the specified item(s) to the character's inventory.
--- (quantity) is optional, defaults to one.
-Usage: you|actor #take (quantity) item_name\n`
-
-function doDrop(inputMaster) {
-  const character = inputMaster.character
-  const items = inputMaster.parsedArgs.items
-  // Remove the items
-  const [messages, success] = removeItems(character, items)
-  // Handle output texts
-  state.message = `[${messages.join(' ')}]`
-  const unableText = success ? "" : " was not able to"
-  const outText = `[${character.info.name}${unableText} ${inputMaster.commandName} ${inputMaster.argumentText}.]`
-  if (success) updateCharacter(character);
-  return [outText, success]
-}
-
-const doDropHelp = `<><> #drop command
--- Removes an instance of the specified item(s) from the character's inventory.
--- (quantity) is optional, defaults to one.
-Usage: you|actor #drop (quantity) item_name\n`
-
-const tradeCommandSpec = [
-  {
-    give_items: {
-      args: [
-        { name: "amount", types: ["number"], req: false },
-        { name: "item",   types: ["item"],   req: true }
-      ],
-      req: true,
-      multi: true,
-      elementDelimiters: [",", "and"],
-      setDelimiters: ["for"]
-    }
-  },
-  {
-    take_items: {
-      args: [
-        { name: "amount", types: ["number"], req: false },
-        { name: "item",   types: ["item"],   req: true }
-      ],
-      req: true,
-      multi: true,
-      elementDelimiters: [",", "and"],
-      setDelimiters: []
-    }
-  }
-]
-
-function doTrade(inputMaster) {
-  const character = inputMaster.character
-  const take_items = inputMaster.parsedArgs.take_items
-  const give_items = inputMaster.parsedArgs.give_items
-  console.log(take_items)
-  console.log(give_items)
-
-  // Remove the give_items, then add the take_items
-  const [messages, success] = removeItems(character, give_items)
-  messages.push(success ? addItems(character, take_items) : [])
-
-  // Handle output texts
-  state.message = `[${messages.join(' ')}]`
-  const unableText = success ? "" : " was not able to"
-  const outText = `${character.info.name}${unableText} ${inputMaster.commandName} ${inputMaster.argumentText}.`
-  if (success) updateCharacter(character);
-  return [outText, success]
-}
-
-const doTradeHelp = `<><> #trade command
--- Adds and Removes the specified items in the character's inventory.
--- (quantity) is optional, defaults to one.
-Usage: you|actor #trade (quantity) give_item for (quantity) take_item\n`
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 ///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////// MEMORY MODE ////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////// EXP & LEVEL ////////////////////////////////////////////////////////
 
-// TODO: Place this in a story card for dynamic user modification and code cleanliness
-const defaultMemoryInstructions = `You are updating the adventure’s running SUMMARY points.
-
-GOAL
-- Read only the visible transcript and the sections appended below.
-- Produce a compact, factual list of summary points (<~2000 characters total). No inventions.
-
-SCOPE (include only if relevant now or soon)
-- Major/minor long term plot points that still affect the present.
-- Moments that changed relationships/reputation/resources.
-- Key events: discoveries, fights, long term conditions/injuries, important items gained/lost, debts/favors.
-- Long term active threads, mysteries, promises, conflicts.
-
-VERIFIABILITY
-- Use only facts from the transcript or from CURRENT/ARCHIVED SUMMARY below.
-- If uncertain, omit.
-
-RELEVANCE FILTER
-- HIGH: drives the current scene, active plots/events.
-- MEDIUM: recurring subplot/relationship/condition/resource.
-- LOW: resolved/one-off/minor/short-term not seen again.
-- If space is tight, drop LOW first, then weaker MEDIUM. Keep all HIGH.
-
-DURABILITY FILTER (HARD RULE)
-- Include only long-lived facts/events expected to remain true.
-- Exclude transient staging, momentary, currently/now states.
-- Prefer outcome statements (what happened + lasting result) over current in-progress descriptions.
-
-INCLUSION TEST (must pass ALL)
-1) NOW-TEST: Affects the current scene or events.
-2) ACTION-TEST: Tied to a concrete action/event/state.
-3) EVIDENCE-TEST: Supported by transcript or CURRENT/ARCHIVED SUMMARY.
-4) DURABILITY-TEST: Still useful ≥3 scenes from now.
-
-EXCLUSIONS (HARD RULE)
-- EXCLUDE world/setting lore, encyclopedic facts, species/class/item/system definitions, cosmology, laws of magic, generalized truths, or “X exists…” assertions.
-- EXCLUDE location/item/faction/character/personality descriptions unless they were directly affected recent or current actions.
-
-MERGE & PRECEDENCE (ANTI-CHURN)
-- Treat CURRENT SUMMARY items as candidates; keep only those still relevant.
-- If a CURRENT item is still accurate, keep its exact wording (do not paraphrase).
-- Consider ARCHIVED items; bring back only if clearly relevant now, keep its exact wording (do not paraphrase).
-- Transcript overrides outdated CURRENT/ARCHIVED facts.
-- Deduplicate overlaps; keep the shortest, most precise, most recent wording.
-- Prefer compressed natural clauses without label-colon formats.
-
-SPECULATION
-- Do NOT assert speculative outcomes, omit.
-- If risk is implied but not confirmed, omit.
-- Do NOT invent relations; if uncertain, omit.
-
-EPHEMERA & ACCESSORIES
-- Exclude short-lived scene states.
-- Include objects only if plot-active or tracked, Otherwise omit.
-
-NAME CANONICALIZATION & CONTEXT (HARD RULE)
-- Replace generic references with concise, specific forms drawn from the transcript or CURRENT/ARCHIVED SUMMARY.
-- On first mention of an entity in the output, attach a compact qualifier (e.g., place/faction/role) to disambiguate.
-- Use the same canonical short form for that entity in all bullets of this output.
-- Do not invent qualifiers or kinship terms; only use information explicitly present in sources.
-- Keep qualifiers brief (≤3 words) and avoid redundancy with nearby bullets.
-- If a qualifier would exceed the character budget and the entity is otherwise unambiguous, omit the qualifier.
-
-STYLE & COMPRESSION
-- Use past tense; sentence fragments OK. Begin each bullet with a past-tense form.
-- One bullet per point; each line must begin exactly with "- ".
-- ~18 words per line when possible; remove filler; omit dates unless crucial.
-- Do NOT use “label: value” schemas. Write as a natural clause.
-- No inferred needs/goals; omit timers/deadlines.
-- Omit descriptors unless they affected outcomes or are being acted on.
-- No quotes, no headers, no categories, no commentary, no counts, no code blocks, no emojis.
-- Order: relevance (HIGH→MEDIUM→LOW) then recency (new→old).
-
-OUTPUT RULES (strict)
-- Output ONLY the new list of summary points as lines starting "- ".
-- Do not print anything else (no preface/epilogue).
-- If nothing qualifies, output nothing (i.e., zero lines).
-- Stop before exceeding ~2000 characters; end cleanly on a complete bullet.`
-
-function instructMemories(previousMemories, archivedMemories) {
-  const instructionCard = searchStoryCards({type: TRPGCardType, title: TRPGCardType+"Instruct Memory"})
-  if(instructionCard.length <= 0) addStoryCard("", "", TRPGCardType, TRPGCardType + "Instruct Memory", defaultMemoryInstructions);
-  
-  const memoryInstructions = `<SYSTEM>
-IGNORE ALL OTHER INSTRUCTIONS AND DO THE FOLLOWING.
-${instructionCard[0]?.description || defaultMemoryInstructions}
-
-— CURRENT SUMMARY POINTS (appended by script below this line) —
-${previousMemories}
-
-— ARCHIVED SUMMARY POINTS (appended by script below this line) —
-${archivedMemories}
-
-IGNORE ALL OTHER INSTRUCTIONS.
-</SYSTEM>`
-  
-  return memoryInstructions
+// Gets the required experience points for the character's next level.
+function getExpForLevel(level) {
+  // Gives the level progression of: 1=300, 2=1000, 3=2200, 5=7700, 10=53000, 20=406000
+  return Math.floor(Math.round((level ** 3) * 50 + (level*300)) / 100)*100;
 }
 
-function doMemory(inputMaster=null) {
-  // Make sure the memoryCard is setup
-  let memoryCard = searchStoryCards({type: TRPGCardType, title: TRPGCardType+"Active Memory"})
-  if (memoryCard.length <= 0) addStoryCard("a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,y,x,z", "", TRPGCardType, TRPGCardType + "Active Memory", "")
-  // Memorize specific user defined memory
-  if (inputMaster.argumentText != "") {
-    const newMemory = `${inputMaster.argumentText} ${inputMaster.flavorText}`.trim()
-    memoryCard = searchStoryCards({type: TRPGCardType, title: TRPGCardType+"Active Memory"})
-    memoryCard[0].entry += `\n${newMemory}`
-    return ["Memory Noted! (delete this and continue)", false]
-  }
-  // Override the context with "Memory Instructions"
-  state.TRPG.memoryMode = true
-  state.TRPG.lastMemory = info.actionCount
-  const previousMemories = memoryCard.length > 0 ? memoryCard[0].entry : "- None."
-  const archivedMemories = memoryCard.length > 0 ? memoryCard[0].description : "- None."
-  state.memory.context = instructMemories(previousMemories, archivedMemories)
-  return ["Collecting memories... (delete this after)", true]
+// Determines the current level of a character based on their experience points.
+function getLevel(experience) {
+  if (experience < 0) experience = 0
+  let level = 1
+  while (getExpForLevel(level) <= experience) { level++ }
+  return level
 }
 
-const doMemoryHelp = `<><> #memorize command
--- Forces AI Dungeon to look back through your adventure and create memories.
--- Stores archived and current memories in story cards.
--- Optional: Can specifiy a memory to add, instead of auto run.
-Usage: #memorize (optional memory)\n`
+function addExp(successFlag) {
+  const expGain = successFlag ? state.TRPG.config.actionExp : state.TRPG.config.actionExp / 4
+  const cardName = `${state.TRPG.actorName} - Info`;
 
-function collectMemories(newMemories) {
-  const memoryCard = searchStoryCards({ type: TRPGCardType, title: TRPGCardType + "Active Memory" });
-  // --- helpers --------------------------------------------------------------
-  const toArray = (txt = "") =>
-    String(txt)
-      .split(/\r?\n/)
-      .map(s => s.replace(/^\s*-\s*/, "").trim()) // strip leading "- " if present
-      .filter(Boolean);
-
-  const canonical = s =>
-    s.toLowerCase()
-      .replace(/[.\s]+$/g, "")   // drop trailing periods/spaces
-      .replace(/\s+/g, " ");     // collapse spaces
-
-  const uniquePreserve = arr => {
-    const seen = new Set();
-    const out = [];
-    for (const s of arr) {
-      const k = canonical(s);
-      if (!seen.has(k)) { seen.add(k); out.push(s); }
-    }
-    return out;
-  };
-  // --- parse incoming/new list ---------------------------------------------
-  const formatList = arr => arr.map(s => `- ${s}`).join("\n");
-  const newList = uniquePreserve(toArray(newMemories));
-
-  if (memoryCard.length > 0) {
-    // existing card: reconcile with previous (old active) and archived
-    let previousMemories = memoryCard[0].entry || "";
-    let archivedMemories = memoryCard[0].description || "";
-
-    const prevList = uniquePreserve(toArray(previousMemories));
-    let archList = uniquePreserve(toArray(archivedMemories));
-
-    const newKeys = new Set(newList.map(canonical));
-    const archKeys = new Set(archList.map(canonical));
-
-    // 1) Remove any memories from the archive that are now in the new list
-    archList = archList.filter(item => !newKeys.has(canonical(item)));
-
-    // 2) Add any memories that were in previous but are missing from new → archive
-    for (const item of prevList) {
-      const key = canonical(item);
-      if (!newKeys.has(key) && !archKeys.has(key)) {
-        archList.push(item);
-        archKeys.add(key);
-      }
-    }
-
-    // 3) Update the card
-    memoryCard[0].entry = formatList(newList);
-    memoryCard[0].description = formatList(archList);
-  } else {
-    // no card yet → create one with the new list as entry, empty archive
-    addStoryCard("a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,y,x,z", formatList(newList), TRPGCardType, TRPGCardType + "Active Memory", "");
+  // Find existing TRPG character card
+  const existingIndex = storyCards.findIndex(card => card.title.toLowerCase() === cardName.toLowerCase() && card.type === TRPGCardType);
+  if (existingIndex < 0) {
+    const cardContent = characterTemplate(state.TRPG.actorName, "none", 1, expGain)
+    addStoryCard("", cardContent, TRPGCardType, cardName, "");
+    return;
   }
+
+  // Update existing card by appending the new exp & level
+  let character = card2json(storyCards[existingIndex].entry)
+  character["EXP"] = parseInt(character["EXP"]) + expGain
+  character["Level"] = getLevel(character["EXP"])
+  updateStoryCard(existingIndex, "", json2card(character), TRPGCardType, cardName, "");
 }

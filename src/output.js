@@ -20,17 +20,14 @@ const modifier = (text) => {
 function AIDungeonTRPG_output(text, stop=false) {
   AIDungeonTRPG_initialize()
 
-  if (state.TRPG.memoryMode) {
-    collectMemories(text)
-    clearState()
-    return [" ", stop]
-  }
-
   // Disables output
   if(state.TRPG.showOutput == false) {
     clearState()
     return [" ", stop]
   }
+  
+  // Checks and saves the results of the try command (if any)
+  text = saveActionResult(text)
 
   // Replaces AI Dungeon output
   if (state.TRPG.outputText != "") {
@@ -50,7 +47,6 @@ function clearState() {
   state.TRPG.outputText = ""
   state.TRPG.prefixText = ""
   state.TRPG.postfixText = ""
-  state.TRPG.memoryMode = false
 }
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
