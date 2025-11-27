@@ -9,9 +9,6 @@
 ///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////// CONSTANTS /////////////////////////////////////////////////////////
 
-// Keywords
-const skillsKeyword = "skills"
-
 // Constants
 const TRPGCardType = "TRPG"
 
@@ -291,18 +288,16 @@ Usage: #reset\n`
 const doTryHelp = `<><> #try command
 -- Performs a check by rolling 1d20 against an AI determined difficulty.
 -- AI determines advantages and hinderences that may increase or reduce difficulty.
--- If the actor is not a character, no skill reductions are made, defaulkt actor is You.
+-- If the actor is not a character, no skill reductions are made, default actor is You.
 Usage: you|actor #try ... \n`
 
 function doTry(inputMaster) {
   const config = state.TRPG.config
 
   // Get the list of character skills
-  const skillsCard = searchStoryCards({type: TRPGCardType, title: `${state.TRPG.actorName} - ${skillsKeyword}`})
   const infoCard = searchStoryCards({type: TRPGCardType, title: `${state.TRPG.actorName} - Info`})
-
-  const skillsList = (skillsCard.length > 0) ? skillsCard[0].entry : []
-  const charLevel = (infoCard.length > 0) ? parseInt(infoCard[0].entry.match(/Level:\s*(\d+)/)[1]) : 1
+  const skillsList = (infoCard.length > 0) ? card2json(infoCard[0].entry)["Skills"] : []
+  const charLevel = (infoCard.length > 0) ? parseInt(card2json(infoCard[0].entry)["Level"]) : 1
 
   // Pre-roll a dice value
   const diceRoll = getRandomInteger(1, config.defaultCheckDice)
@@ -380,7 +375,7 @@ function saveActionResult(outputText) {
   updateStoryCard(existingIndex, "", resultBlock, TRPGCardType, cardName, "");
 
   // Apply experience gain
-  addExp(state.TRPG.actorName, resultBlock.includes("SUCCESS"))
+  addExp(resultBlock.includes("SUCCESS"))
   return narrativeText
 }
 
@@ -389,8 +384,8 @@ function saveActionResult(outputText) {
 ///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////// CHARACTER /////////////////////////////////////////////////////////
 
-function characterTemplate(name, title, level, exp) {
-  return `Name: ${name}\nTitle: ${title}\nLevel: ${level}\nEXP: ${exp}`
+function characterTemplate({name = state.TRPG.actorName, title = "none", level = 1, exp = 0, skills = ""} = {}) {
+  return `Name: ${name}\nTitle: ${title}\nLevel: ${level}\nEXP: ${exp}\nSkills: ${skills}`
 }
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
@@ -419,7 +414,7 @@ function addExp(successFlag) {
   // Find existing TRPG character card
   const existingIndex = storyCards.findIndex(card => card.title.toLowerCase() === cardName.toLowerCase() && card.type === TRPGCardType);
   if (existingIndex < 0) {
-    const cardContent = characterTemplate(state.TRPG.actorName, "none", 1, expGain)
+    const cardContent = characterTemplate()
     addStoryCard("", cardContent, TRPGCardType, cardName, "");
     return;
   }
