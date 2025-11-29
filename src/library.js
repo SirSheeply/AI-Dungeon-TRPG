@@ -12,8 +12,18 @@
 // Constants
 const TRPGCardType = "TRPG"
 
+// Keywords
+const InfoKeyword = "Info"
+const DataKeyword = "Data"
+const SkillsKeyword = "Skills"
+const NameKeyword = "Name"
+const LevelKeyword = "Level"
+const TitleKeyword = "Title"
+const EXPKeyword = "EXP"
+
 // Regex
 const hasCommandRegex = (/(?:^|\s)#\w+/);                          // Check if there's a '#' at the start of any word (not mid-word)
+const intParenthesesRegex = (/\((\d+)\)$/)                         // /\(\d+\)$/
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
@@ -28,10 +38,11 @@ function AIDungeonTRPG_initialize() {
     state.TRPG.prefixText = ""
     state.TRPG.postfixText = ""
   }
-  state.TRPG.actorName = "You"  //TODO: Fix hardcoded "You" to character name
+  state.TRPG.actor = getSetCharacter({name: "You"})  // Get's the actor character (or creates one) // TODO: Fix hardcoded "You" to character name
   state.TRPG.config = {
     defaultCheckDice: 20,       // Dice / Range to use for making checks
     actionExp: 100,             // Base amount of EXP rewarded for successful actions
+    newSkillExp: -1000          // Starting amount of EXP for newly learning skills
   }
   enforceConfig() // Load config changes from story cards
 }
@@ -43,7 +54,8 @@ function enforceConfig() {
   if (configCardIndex >= 0) {
     try {
       const newSettings = JSON.parse(storyCards[configCardIndex].entry)
-      Object.keys(newSettings).forEach(key => { state.TRPG.config[key] = validateType(newSettings[key], state.TRPG.config[key]) });
+      Object.keys(state.TRPG.config).forEach(key => { state.TRPG.config[key] = validateType(newSettings[key], state.TRPG.config[key]) });
+      updateStoryCard(configCardIndex, "", JSON.stringify(state.TRPG.config[key], null, 2), TRPGCardType, configTitle, "")
     } catch (error) {
       updateStoryCard(configCardIndex, "", JSON.stringify(state.TRPG.config, null, 2), TRPGCardType, configTitle, "")
     }
@@ -125,7 +137,7 @@ function commandExtract(rawText) {
   const targetNames = rawText.match(/@(\S+)/);
 
   // Clean input (remove symbols)
-  const cleanInput = rawText.replace(/(?<!\w)[#@](?=\w)/g, '');
+  const cleanInput = rawText.replace(/(^|\s)[#@](?=\w)/g, '$1');
   
   return {
     commandName,    // #command referenced in input
@@ -289,32 +301,30 @@ const doTryHelp = `<><> #try command
 -- Performs a check by rolling 1d20 against an AI determined difficulty.
 -- AI determines advantages and hinderences that may increase or reduce difficulty.
 -- If the actor is not a character, no skill reductions are made, default actor is You.
-Usage: you|actor #try ... \n`
+-- EXP is gained for successful check (25% for failed attempt), amount can be configured (actionExp).
+Usage: Any text with #skillName or #try \n`
 
 function doTry(inputMaster) {
   const config = state.TRPG.config
-
-  // Get the list of character skills
-  const infoCard = searchStoryCards({type: TRPGCardType, title: `${state.TRPG.actorName} - Info`})
-  const skillsList = (infoCard.length > 0) ? card2json(infoCard[0].entry)["Skills"] : []
-  const charLevel = (infoCard.length > 0) ? parseInt(card2json(infoCard[0].entry)["Level"]) : 1
+  const character = state.TRPG.actor
 
   // Pre-roll a dice value
   const diceRoll = getRandomInteger(1, config.defaultCheckDice)
 
   // Set the context and hope for the best
-  state.memory.authorsNote = tryInstructions(skillsList, diceRoll, charLevel)
+  state.memory.authorsNote = tryInstructions(character[InfoKeyword][SkillsKeyword], diceRoll, parseInt(character[InfoKeyword][LevelKeyword]), Object.keys(character[DataKeyword][SkillsKeyword]))
   return [inputMaster.cleanInput, true]
 }
 
-function tryInstructions(skillList, roll, level) {
+function tryInstructions(skillList, roll, level, allSkills) {
   const tryCard = searchStoryCards({type: TRPGCardType, title: `TRPG - Try Instructions`})
-  if (tryCard.length < 0) throw new Error("Action Failed! Try Instructions card does not exist!")
+  if (tryCard.length <= 0) throw new Error("Action Failed! Try Instructions card does not exist!")
   
   let instructions = tryCard[0].description
   instructions = instructions.replaceAll("skillList", skillList)
   instructions = instructions.replaceAll("rollValue", roll)
   instructions = instructions.replaceAll("levelMod", Math.floor(level / 4))
+  instructions = instructions.replaceAll("allSkillNames", allSkills)
   return instructions
 }
 
@@ -368,14 +378,15 @@ function saveActionResult(outputText) {
   const existingIndex = storyCards.findIndex(card => card.title.toLowerCase() === cardName.toLowerCase() && card.type === TRPGCardType);
   if (existingIndex < 0) {
     addStoryCard("", resultBlock, TRPGCardType, cardName, "")
-    return narrativeText
+  } else {
+    updateStoryCard(existingIndex, "", resultBlock, TRPGCardType, cardName, "")
   }
 
-  // Update existing card by appending the new block
-  updateStoryCard(existingIndex, "", resultBlock, TRPGCardType, cardName, "");
+  // Update expGain and relevant skill progress
+  const expGain = resultBlock.includes("SUCCESS") ? state.TRPG.config.actionExp : state.TRPG.config.actionExp / 4
+  const relevantSkills = (resultBlock.match(/^[ \t]*relevant skills:\s*(.*)$/im) || [,''])[1]
+  updateCharacter({name: state.TRPG.actor[InfoKeyword][NameKeyword], expGain: expGain, rskills: relevantSkills})
 
-  // Apply experience gain
-  addExp(resultBlock.includes("SUCCESS"))
   return narrativeText
 }
 
@@ -384,8 +395,109 @@ function saveActionResult(outputText) {
 ///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////// CHARACTER /////////////////////////////////////////////////////////
 
-function characterTemplate({name = state.TRPG.actorName, title = "none", level = 1, exp = 0, skills = ""} = {}) {
-  return `Name: ${name}\nTitle: ${title}\nLevel: ${level}\nEXP: ${exp}\nSkills: ${skills}`
+function characterTemplate({name = state.characterName || "You", title = "none", level = 1, exp = 0, skills = ""} = {}) {
+  return `Name: ${name}\nTitle: ${title}\nLevel: ${level}\nEXP: ${exp}\n${SkillsKeyword}: ${skills}`
+}
+
+function skillsTemplate(skills) {
+  const skillsData = {}
+  const skillList = skills.split(',').map(s => s.trim()).filter(Boolean)
+  for (const s of skillList) {
+    const level = parseInt(s.match(intParenthesesRegex)?.[1] || 0, 10);
+    const name = s.replace(intParenthesesRegex, '').trim();
+    skillsData[name] = { [LevelKeyword]: level, [EXPKeyword]: 0 };
+  }
+  return skillsData
+}
+
+// Smart update of character by applying exp gain to character level and relevant skills
+function updateCharacter({name = state.characterName || "You", expGain = 0, rskills = ""} = {}) {
+  const cardName = `${name} - ${InfoKeyword}`;
+  let existingIndex = storyCards.findIndex(card => card.title.toLowerCase() === cardName.toLowerCase() && card.type === TRPGCardType)
+
+  console.log(expGain, rskills, existingIndex)
+
+  // Create a character card if none exists
+  if (existingIndex < 0) {
+    const notes = {}
+    notes[SkillsKeyword] = {}
+    existingIndex = addStoryCard("", characterTemplate({name: name}), TRPGCardType, cardName, JSON.stringify(notes, null, 2))-1
+  }
+
+  // Get existing card details
+  const cardContent = card2json(storyCards[existingIndex].entry)
+  const cardNotes = JSON.parse(storyCards[existingIndex].description)
+
+  console.log(cardContent, cardNotes)
+
+  // Update character level and exp
+  cardContent[EXPKeyword] = parseInt(cardContent[EXPKeyword]) + expGain
+  cardContent[LevelKeyword] = getLevel(cardContent[EXPKeyword])
+
+  // Update the relevant skills list in the card notes
+  const skillList = rskills.split(',').map(s => s.replace(intParenthesesRegex, '').trim()).filter(Boolean)
+  for (const rs of skillList) {
+    const keys = Object.keys(cardNotes[SkillsKeyword]);
+    const index = keys.findIndex(k => k.toLowerCase() === rs.toLowerCase());
+    const rsindex = index >= 0 ? keys[index] : rs // preserve original case if new
+    if (index >= 0) {
+      cardNotes[SkillsKeyword][rsindex][EXPKeyword] += expGain
+    } else {
+      cardNotes[SkillsKeyword][rsindex] = {}
+      cardNotes[SkillsKeyword][rsindex][EXPKeyword] = state.TRPG.config.newSkillExp
+    }
+    cardNotes[SkillsKeyword][rsindex][LevelKeyword] = getLevel(cardNotes[SkillsKeyword][rsindex][EXPKeyword])
+  }
+
+  // Promote and update levels of skills in the card info
+  const infoSkills = cardContent[SkillsKeyword].split(',').map(s => s.replace(intParenthesesRegex, "").trim()).filter(Boolean)
+  for (const si in cardNotes[SkillsKeyword]) {
+    const skillLevel = cardNotes[SkillsKeyword][si][LevelKeyword]
+    if (skillLevel > 0) {
+      const index = infoSkills.findIndex(v => v.toLowerCase() === si.toLowerCase());
+      const infoindex = index >= 0 ? infoSkills[index] : si
+      const skillString = `${si}(${skillLevel})`
+      if (index >= 0) infoSkills[infoindex] = skillString
+      else infoSkills.push(skillString)
+    }
+  }
+  cardContent[SkillsKeyword] = infoSkills.join(", ")
+
+  console.log(cardContent, cardNotes)
+
+  // Finally apply the update
+  updateStoryCard(existingIndex, storyCards[existingIndex].keys, json2card(cardContent), TRPGCardType, cardName, JSON.stringify(cardNotes, null, 2))
+}
+
+// Can be used to get, set, and/or create a character
+function getSetCharacter({name = state.characterName || "You", title = null, level = null, exp = null, skills = null, rskills = null} = {}) {
+  const cardName = `${name} - ${InfoKeyword}`;
+  let existingIndex = storyCards.findIndex(card => card.title.toLowerCase() === cardName.toLowerCase() && card.type === TRPGCardType)
+
+  // Create a character card if none exists
+  if (existingIndex < 0) {
+    const cardConent = characterTemplate({name: name})
+    const cardNotes = {}
+    cardNotes[SkillsKeyword] = skillsTemplate(skills || "")
+    existingIndex = addStoryCard("", cardConent, TRPGCardType, cardName, JSON.stringify(cardNotes, null, 2))-1
+  }
+
+  // Then update with the argument values, if not null
+  const cardContent = card2json(storyCards[existingIndex].entry)
+  const cardNotes = JSON.parse(storyCards[existingIndex].description)
+  if (name)    cardContent[NameKeyword]   = name
+  if (title)   cardContent[TitleKeyword]  = title
+  if (level)   cardContent[LevelKeyword]  = level
+  if (exp)     cardContent[EXPKeyword]    = exp
+  if (skills)  cardContent[SkillsKeyword] = skills
+  if (rskills) cardNotes[SkillsKeyword]   = rskills
+  updateStoryCard(existingIndex, storyCards[existingIndex].keys, json2card(cardContent), TRPGCardType, cardName, JSON.stringify(cardNotes, null, 2))
+
+  const character = {}
+  character[InfoKeyword] = cardContent
+  character[DataKeyword] = cardNotes
+
+  return character
 }
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
@@ -395,33 +507,14 @@ function characterTemplate({name = state.TRPG.actorName, title = "none", level =
 
 // Gets the required experience points for the character's next level.
 function getExpForLevel(level) {
-  // Gives the level progression of: 1=300, 2=1000, 3=2200, 5=7700, 10=53000, 20=406000
+  // Gives the level progression of: 1=1, 2=300, 3=1000, 4=2200, 6=7700, 11=53000, 21=406000
   return Math.floor(Math.round((level ** 3) * 50 + (level*300)) / 100)*100;
 }
 
 // Determines the current level of a character based on their experience points.
 function getLevel(experience) {
-  if (experience < 0) experience = 0
-  let level = 1
+  let level = 0
+  if (experience <= 0) return level
   while (getExpForLevel(level) <= experience) { level++ }
   return level
-}
-
-function addExp(successFlag) {
-  const expGain = successFlag ? state.TRPG.config.actionExp : state.TRPG.config.actionExp / 4
-  const cardName = `${state.TRPG.actorName} - Info`;
-
-  // Find existing TRPG character card
-  const existingIndex = storyCards.findIndex(card => card.title.toLowerCase() === cardName.toLowerCase() && card.type === TRPGCardType);
-  if (existingIndex < 0) {
-    const cardContent = characterTemplate()
-    addStoryCard("", cardContent, TRPGCardType, cardName, "");
-    return;
-  }
-
-  // Update existing card by appending the new exp & level
-  let character = card2json(storyCards[existingIndex].entry)
-  character["EXP"] = parseInt(character["EXP"]) + expGain
-  character["Level"] = getLevel(character["EXP"])
-  updateStoryCard(existingIndex, "", json2card(character), TRPGCardType, cardName, "");
 }

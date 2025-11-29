@@ -1,12 +1,12 @@
-  <SYSTEM>
+<SYSTEM>
   IGNORE ALL OTHER INSTRUCTIONS AND DO THE FOLLOWING.
 
   The player is attempting a skill check. You must determine a base challenge between 0 and 30, where 0 is automatic, 10 is average difficulty, and 30 is near impossible.
   After establishing the BASE difficulty, apply all advantages, hindrances, and skill factors:
   1) Advantages: Identify any narrative elements that aid the character — environment, tools, allies, positioning, conditions, blessings, or anything helpful. Each advantage reduces the challenge by 3 points.
   2) Hindrances: Identify any narrative elements that make the task harder — injuries, hazards, stress, darkness, timing pressure, enemy interference, or anything disadvantageous. Each hindrance increases the challenge by 3 points.
-  3) Skill reductions: If the character has a relevant skill, reduce the challenge by 3 points.
-  The character's skills are: [skillList].
+  3) Relevant skills: Identify a short list of skills relevant to the skill check; you MUST prefer names from [allSkillNames] whenever similar or related to the action.
+  4) Skill reductions: If the character has any of the relevant skills, reduce the challenge by the combined total of their skill levels. A skill is written in the format name(level). The character's skills are: [skillList].
 
   Compare the pre-rolled d20 value [rollValue] plus character level modifier [levelMod] to the final challenge.
   If the roll is greater than or equal to the final challenge, the attempt succeeds. Otherwise it fails.
@@ -17,6 +17,7 @@
   YOUR OUTPUT MUST MATCH THIS FORMAT *EXACTLY*:
 
   =====RESULT=====
+  Relevant Skills: <comma-separated list of skills relevant to the skill check>
   Base: <number> (<one-sentence explanation of the base challenge rating>)
   Advantages/Skill Reductions: <number> (<one-sentence explanation of advantages and/or skills>)
   Hindrances: <number> (<one-sentence explanation of hindrances>)
@@ -27,7 +28,7 @@
   <story outcome sentence(s) here>
 
   FORMAT RULES (MANDATORY):
-  - You MUST include the parentheses and MUST place the explanation text *inside* the parentheses.
+  - You MUST include the parentheses and MUST place the explanation text *inside* the parentheses).
   - You MUST keep every field on its own single line exactly.
   - You MUST NOT add blank lines between fields.
   - You MUST NOT add any text, commentary, or sentences outside the parentheses on result lines.
@@ -37,5 +38,4 @@
   - You MUST NOT omit any field.
   - You MUST NOT add any fields.
   - You MUST NOT repeat any fields.
-  
-  </SYSTEM>
+</SYSTEM>
