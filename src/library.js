@@ -126,7 +126,6 @@ function commandRegistry(commandName) {
       return entry;
     }
   }
-
   // Defaults to doTry if no valid command is found
   return registry.find(e => e.handler === doTry);
 }
@@ -405,7 +404,7 @@ function skillsTemplate(skills) {
   for (const s of skillList) {
     const level = parseInt(s.match(intParenthesesRegex)?.[1] || 0, 10);
     const name = s.replace(intParenthesesRegex, '').trim();
-    skillsData[name] = { [LevelKeyword]: level, [EXPKeyword]: 0 };
+    skillsData[name] = { [LevelKeyword]: level, [EXPKeyword]: getExpForLevel(level-1)+1 };
   }
   return skillsData
 }
@@ -414,8 +413,6 @@ function skillsTemplate(skills) {
 function updateCharacter({name = state.characterName || "You", expGain = 0, rskills = ""} = {}) {
   const cardName = `${name} - ${InfoKeyword}`;
   let existingIndex = storyCards.findIndex(card => card.title.toLowerCase() === cardName.toLowerCase() && card.type === TRPGCardType)
-
-  console.log(expGain, rskills, existingIndex)
 
   // Create a character card if none exists
   if (existingIndex < 0) {
@@ -427,8 +424,6 @@ function updateCharacter({name = state.characterName || "You", expGain = 0, rski
   // Get existing card details
   const cardContent = card2json(storyCards[existingIndex].entry)
   const cardNotes = JSON.parse(storyCards[existingIndex].description)
-
-  console.log(cardContent, cardNotes)
 
   // Update character level and exp
   cardContent[EXPKeyword] = parseInt(cardContent[EXPKeyword]) + expGain
@@ -455,15 +450,13 @@ function updateCharacter({name = state.characterName || "You", expGain = 0, rski
     const skillLevel = cardNotes[SkillsKeyword][si][LevelKeyword]
     if (skillLevel > 0) {
       const index = infoSkills.findIndex(v => v.toLowerCase() === si.toLowerCase());
-      const infoindex = index >= 0 ? infoSkills[index] : si
-      const skillString = `${si}(${skillLevel})`
-      if (index >= 0) infoSkills[infoindex] = skillString
+      const skillName = index >= 0 ? infoSkills[index] : si
+      const skillString = `${skillName}(${skillLevel})`
+      if (index >= 0) infoSkills[index] = skillString
       else infoSkills.push(skillString)
     }
   }
   cardContent[SkillsKeyword] = infoSkills.join(", ")
-
-  console.log(cardContent, cardNotes)
 
   // Finally apply the update
   updateStoryCard(existingIndex, storyCards[existingIndex].keys, json2card(cardContent), TRPGCardType, cardName, JSON.stringify(cardNotes, null, 2))
@@ -485,18 +478,52 @@ function getSetCharacter({name = state.characterName || "You", title = null, lev
   // Then update with the argument values, if not null
   const cardContent = card2json(storyCards[existingIndex].entry)
   const cardNotes = JSON.parse(storyCards[existingIndex].description)
-  if (name)    cardContent[NameKeyword]   = name
-  if (title)   cardContent[TitleKeyword]  = title
-  if (level)   cardContent[LevelKeyword]  = level
-  if (exp)     cardContent[EXPKeyword]    = exp
-  if (skills)  cardContent[SkillsKeyword] = skills
-  if (rskills) cardNotes[SkillsKeyword]   = rskills
+  if (name    != null) cardContent[NameKeyword]   = name
+  if (title   != null) cardContent[TitleKeyword]  = title
+  if (level   != null) cardContent[LevelKeyword]  = level
+  if (exp     != null) cardContent[EXPKeyword]    = exp
+  if (skills  != null) cardContent[SkillsKeyword] = skills
+  if (rskills != null) cardNotes[SkillsKeyword]   = rskills
+
+  // Validate cardContent levels -> exp to check if player has updated level values out of sync with exp
+  const charLevel = cardContent[LevelKeyword]
+  if (getExpForLevel(charLevel-1)+1 > cardContent[EXPKeyword] || getExpForLevel(charLevel) < cardContent[EXPKeyword]) {
+    cardContent[EXPKeyword] = getExpForLevel(charLevel-1)+1 // Reset exp to minimum for current level
+  }
+
+  // Validate cardNotes levels -> skill exp to check if player has updated level values out of sync with exp
+  const infoSkills = skillsTemplate(cardContent[SkillsKeyword] || "")
+  const skillData = cardNotes[SkillsKeyword] || {}
+  for (const skill in infoSkills) {
+    const keys = Object.keys(skillData)
+    if (keys.includes(skill) || keys.includes(skill.toLowerCase())) {
+      const index = keys.includes(skill) ? skill : keys.includes(skill.toLowerCase()) ? skill.toLowerCase() : ""
+      // check if the levels are the same; if not, update skillData level to infoSkills level
+      const skillLevel = infoSkills[skill][LevelKeyword]
+      if (skillData[index][LevelKeyword] != skillLevel) {
+        skillData[index][LevelKeyword] = skillLevel
+      }
+      // check if the skillData exp is in the expected range for the infoSkill level; if not update the skillData exp to the minimum for that level
+      const dataExp = skillData[index][EXPKeyword]
+      if (getExpForLevel(skillLevel-1)+1 > dataExp || getExpForLevel(skillLevel) < dataExp) {
+        skillData[index][EXPKeyword] = infoSkills[skill][EXPKeyword] // Reset exp to minimum for current level
+      }
+    } else {
+      // Else Player has added a new skill: Update skillData with new skill
+      skillData[skill] = {}
+      skillData[skill][LevelKeyword] = infoSkills[skill][LevelKeyword]
+      skillData[skill][EXPKeyword] = infoSkills[skill][EXPKeyword]
+    }
+  }
+  cardNotes[SkillsKeyword] = skillData // Update the cardNotes with the validations (if any)
+
+  // Finally update the character story card
   updateStoryCard(existingIndex, storyCards[existingIndex].keys, json2card(cardContent), TRPGCardType, cardName, JSON.stringify(cardNotes, null, 2))
 
+  // Return character data with both info and data (for easy access later / get functionality)
   const character = {}
   character[InfoKeyword] = cardContent
   character[DataKeyword] = cardNotes
-
   return character
 }
 

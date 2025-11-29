@@ -21,7 +21,7 @@
   Base: <number> (<one-sentence explanation of the base challenge rating>)
   Advantages/Skill Reductions: <number> (<one-sentence explanation of advantages and/or skills>)
   Hindrances: <number> (<one-sentence explanation of hindrances>)
-  Final Difficulty: <number>
+  Final Difficulty: <base - advantages + hindrances>
   Roll: <pre-rolled d20 value + character level modifier [rollValue + levelMod]>
   Outcome: <SUCCESS | FAILURE | CRITICAL SUCCESS | CRITICAL FAILURE>
   =====NARRATIVE=====
