@@ -23,7 +23,7 @@ const EXPKeyword = "EXP"
 
 // Regex
 const hasCommandRegex = (/(?:^|\s)#\w+/);                          // Check if there's a '#' at the start of any word (not mid-word)
-const intParenthesesRegex = (/\((\d+)\)$/)                         // /\(\d+\)$/
+const intParenthesesRegex = (/\((\d+)\)$/)                         // Matches number in parentheses
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
@@ -132,7 +132,7 @@ function commandRegistry(commandName) {
 
 function commandExtract(rawText) {
   // Extract command name
-  const commandName = rawText.match(/#(\S+)/)[1];
+  const commandName = rawText.match(/#(\S+)/)[1].toLowerCase().replace(/[^a-z0-9_]/g, "");
   const targetNames = rawText.match(/@(\S+)/);
 
   // Clean input (remove symbols)
@@ -269,7 +269,7 @@ function singularize(word, makeSingle = true) {
 function doHelp(inputMaster) {
   let textBuilder = "This is a list of all commands, and their synonyms:\n\n"
   for (let entry of commandRegistry()) {
-    textBuilder += `#${entry.synonyms[0]}\n[${entry.synonyms.join(", ")}]\n\n`
+    textBuilder += `${entry.helpText}Synonyms:[${entry.synonyms.join(", ")}]\n\n`
   }
   textBuilder += "You can use #help followed by a command name for specific info; e.g. '#help help'.\n\n"
   state.TRPG.outputText = textBuilder
