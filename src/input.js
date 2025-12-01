@@ -30,7 +30,7 @@ function AIDungeonTRPG_input(text, stop=false) {
     let inputMaster = commandExtract(text)
 
     // Get commandEntry (defaults to doTry action)
-    const commandEntry = commandRegistry(inputMaster.commandName)
+    const commandEntry = commandRegistry(inputMaster.commandName, inputMaster.rawText)
 
     // Where showInput replaces input text, and showOutput controls output display
     let [showInput, showOutput] = commandEntry.handler(inputMaster)

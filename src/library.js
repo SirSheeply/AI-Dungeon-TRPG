@@ -20,10 +20,13 @@ const NameKeyword = "Name"
 const LevelKeyword = "Level"
 const TitleKeyword = "Title"
 const EXPKeyword = "EXP"
+const InvKeyword = "Inventory"
+const TryKeyword = "Try"
 
-// Regex
-const hasCommandRegex = (/(?:^|\s)#\w+/);                          // Check if there's a '#' at the start of any word (not mid-word)
-const intParenthesesRegex = (/\((\d+)\)$/)                         // Matches number in parentheses
+// Regex                   
+const hasCommandRegex = /(?:^|\s)[#\+\-][^\s]+/;          // Check if there's a # or - or + at the start of any word (not mid-word)
+const hasPlusMinusRegex = /(?:^|\s)[\+\-][^\s]+/;         // Check if there's a - or + at the start of any word (not mid-word)
+const intParenthesesRegex = (/\((\d+)\)$/)                // Matches number in parentheses
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
@@ -40,12 +43,21 @@ function AIDungeonTRPG_initialize() {
   }
   state.TRPG.actor = getSetCharacter({name: "You"})  // Get's the actor character (or creates one) // TODO: Fix hardcoded "You" to character name
   state.TRPG.config = {
-    defaultCheckDice: 20,       // Dice / Range to use for making checks
-    actionExp: 100,             // Base amount of EXP rewarded for successful actions
-    newSkillExp: -1000          // Starting amount of EXP for newly learning skills
+    defaultCheckDice: 20,
+    actionExp: 100,
+    newSkillExp: -1000,
+    memoryArea: "authorsNote"
   }
-  enforceConfig() // Load config changes from story cards
+  enforceConfig()     // Load config changes from story cards
+  updateActionLog("") // Clears the action log story card
 }
+
+const configHelp = `
+defaultCheckDice - Dice range to use for making checks
+actionExp - Base amount of EXP rewarded for successful actions
+newSkillExp - Starting amount of EXP for newly learning skills
+memoryArea - Context used for injecting action instructions
+`
 
 function enforceConfig() {
   // Get config story card or create one
@@ -53,14 +65,14 @@ function enforceConfig() {
   const configCardIndex = storyCards.findIndex(card => card.title.toLowerCase() === configTitle.toLowerCase() && card.type === TRPGCardType);
   if (configCardIndex >= 0) {
     try {
-      const newSettings = JSON.parse(storyCards[configCardIndex].entry)
+      const newSettings = JSON.parse(storyCards[configCardIndex].description)
       Object.keys(state.TRPG.config).forEach(key => { state.TRPG.config[key] = validateType(newSettings[key], state.TRPG.config[key]) });
-      updateStoryCard(configCardIndex, "", JSON.stringify(state.TRPG.config[key], null, 2), TRPGCardType, configTitle, "")
+      updateStoryCard(configCardIndex, "", configHelp, TRPGCardType, configTitle, JSON.stringify(state.TRPG.config[key], null, 2))
     } catch (error) {
-      updateStoryCard(configCardIndex, "", JSON.stringify(state.TRPG.config, null, 2), TRPGCardType, configTitle, "")
+      updateStoryCard(configCardIndex, "", configHelp, TRPGCardType, configTitle, JSON.stringify(state.TRPG.config, null, 2))
     }
   } else {
-    addStoryCard("", JSON.stringify(state.TRPG.config, null, 2), TRPGCardType, configTitle, "")
+    addStoryCard("", configHelp, TRPGCardType, configTitle, JSON.stringify(state.TRPG.config, null, 2))
   }
 }
 
@@ -109,7 +121,7 @@ function getRandomFloat(min, max) {
 ///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////// COMMANDS REGISTRY /////////////////////////////////////////////////////
 
-function commandRegistry(commandName) {
+function commandRegistry(commandName, rawText) {
   const registry = [
     // <><> Core Commands
     { handler: doHelp,        helpText: doHelpHelp,        synonyms: ["help"]  },
@@ -117,31 +129,51 @@ function commandRegistry(commandName) {
 
     // <><> Skills & Abilities
     { handler: doTry,         helpText: doTryHelp,         synonyms: ["try", "attempt"] },
-  ]
+    { handler: doCombo,       helpText: doComboHelp,       synonyms: [] }, // (Try + Inventory)
 
-  // Handles searching of the command registry if needed
-  if (!commandName) return registry;
-  for (let entry of registry) {
-    if (entry.synonyms.some(s => s === commandName || singularize(s, false) === commandName)) {
-      return entry;
-    }
+    // <><> Inventory & Economy
+    { handler: doInventory,   helpText: doInventoryHelp,   synonyms: ["buy", "sell", "trade", "take", "drop"] },
+  ];
+
+  // Return full registry if nothing is passed
+  if (!commandName && !rawText) return registry;
+
+  // If a command name exists, try to find it first
+  if (commandName) {
+    const found = registry.find(entry => entry.synonyms.some(s => s === commandName || singularize(s, false) === commandName));
+    if (found) return found;
   }
-  // Defaults to doTry if no valid command is found
+
+  // Smart detection based on symbols
+  const hasTrySymbol = rawText && /#\w+/.test(rawText);
+  const hasInventorySymbol = rawText && /[+-]\w+/.test(rawText);
+
+  if (hasTrySymbol && hasInventorySymbol) {
+    return registry.find(e => e.handler === doCombo);
+  } else if (hasInventorySymbol) {
+    return registry.find(e => e.handler === doInventory);
+  } else if (hasTrySymbol) {
+    return registry.find(e => e.handler === doTry);
+  }
+
+  // Default fallback
   return registry.find(e => e.handler === doTry);
 }
 
 function commandExtract(rawText) {
   // Extract command name
-  const commandName = rawText.match(/#(\S+)/)[1].toLowerCase().replace(/[^a-z0-9_]/g, "");
+  const m = rawText.match(/#(\S+)/);
+  const commandName = m ? m[1].toLowerCase().replace(/[^a-z0-9_]/g, "") : "";
   const targetNames = rawText.match(/@(\S+)/);
 
   // Clean input (remove symbols)
-  const cleanInput = rawText.replace(/(^|\s)[#@](?=\w)/g, '$1');
+  const cleanInput = rawText.replace(/(^|\s)[#@\+\-](?=\w)/g, '$1');
   
   return {
     commandName,    // #command referenced in input
     targetNames,    // @targets referenced in input
-    cleanInput      // Raw unedit player input text
+    rawText,        // Raw unedit player input text
+    cleanInput      // Input with no command symbols
   };
 }
 
@@ -271,7 +303,6 @@ function doHelp(inputMaster) {
   for (let entry of commandRegistry()) {
     textBuilder += `${entry.helpText}Synonyms:[${entry.synonyms.join(", ")}]\n\n`
   }
-  textBuilder += "You can use #help followed by a command name for specific info; e.g. '#help help'.\n\n"
   state.TRPG.outputText = textBuilder
   return [null, true]
 }
@@ -306,24 +337,96 @@ Usage: Any text with #skillName or #try \n`
 function doTry(inputMaster) {
   const config = state.TRPG.config
   const character = state.TRPG.actor
-
   // Pre-roll a dice value
   const diceRoll = getRandomInteger(1, config.defaultCheckDice)
-
+  // Setup inputs for instructions
+  const inputs = {
+    skillList: character[InfoKeyword][SkillsKeyword],
+    rollValie: diceRoll,
+    levelMod: parseInt(character[InfoKeyword][LevelKeyword]),
+    allSkillsNames: Object.keys(character[DataKeyword][SkillsKeyword])
+  }
   // Set the context and hope for the best
-  state.memory.authorsNote = tryInstructions(character[InfoKeyword][SkillsKeyword], diceRoll, parseInt(character[InfoKeyword][LevelKeyword]), Object.keys(character[DataKeyword][SkillsKeyword]))
+  state.memory[config.memoryArea] = actionInstructions(inputs, TryKeyword)
   return [inputMaster.cleanInput, true]
 }
 
-function tryInstructions(skillList, roll, level, allSkills) {
-  const tryCard = searchStoryCards({type: TRPGCardType, title: `TRPG - Try Instructions`})
-  if (tryCard.length <= 0) throw new Error("Action Failed! Try Instructions card does not exist!")
-  
-  let instructions = tryCard[0].description
-  instructions = instructions.replaceAll("skillList", skillList)
-  instructions = instructions.replaceAll("rollValue", roll)
-  instructions = instructions.replaceAll("levelMod", Math.floor(level / 4))
-  instructions = instructions.replaceAll("allSkillNames", allSkills)
+const doComboHelp = `<><> #try+inventory combo command
+-- Performs a check by rolling 1d20 against an AI determined difficulty.
+-- Handles inventory actions such as: steal, throw, drop, and haggle.
+-- AI determines advantages and hinderences that may increase or reduce difficulty.
+-- If the actor is not a character, no skill reductions are made, default actor is You.
+-- EXP is gained for successful check (25% for failed attempt), amount can be configured (actionExp).
+-- The +plus symbol can be used to indicate items you wish to recieve.
+-- The -minus symbol can be used to indicate items you with to remove.
+Usage: Any text with #skillName or #try and the inclusion of +/- symbols\n`
+
+function doCombo(inputMaster) {
+  const config = state.TRPG.config
+  const character = state.TRPG.actor
+  // Pre-roll a dice value
+  const diceRoll = getRandomInteger(1, config.defaultCheckDice)
+  // Setup inputs for instructions
+  const inputs = {
+    skillList: character[InfoKeyword][SkillsKeyword],
+    rollValie: diceRoll,
+    levelMod: parseInt(character[InfoKeyword][LevelKeyword]),
+    allSkillsNames: Object.keys(character[DataKeyword][SkillsKeyword]),
+    inventoryList: character[InfoKeyword][InvKeyword],
+    rawText: inputMaster.rawText
+  }
+  // Set the context and hope for the best
+  state.memory[config.memoryArea] = actionInstructions(inputs, "Combo")
+  return [inputMaster.cleanInput, true]
+}
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////// INV COMMAND ////////////////////////////////////////////////////////
+
+const doInventoryHelp = `<><> #inventory command
+-- Performs inventory actions such as: take, drop, buy, sell, and trade.
+-- AI determines success of the action, based on quanity and narrative.
+-- An inventory action may fail if you're physically unable, lack the items.
+-- Narrative factors in trade negotiations may also impact the success.
+-- If the actor is not a character, default actor is You.
+-- The +plus symbol can be used to indicate items you wish to recieve.
+-- The -minus symbol can be used to indicate items you with to remove.
+Usage: Use of the synonyms as #commands or symbolic format with +/-\n`
+
+function doInventory(inputMaster) {
+  const character = state.TRPG.actor
+  // Setup inputs for instructions
+  const inputs = {inventoryList: character[InfoKeyword][InvKeyword], rawText: inputMaster.rawText}
+  // Set the context and hope for the best
+  state.memory[state.TRPG.config.memoryArea] = actionInstructions(inputs, InvKeyword)
+  return [inputMaster.cleanInput, true]
+}
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////// ACTIONS UTILITIES /////////////////////////////////////////////////////
+
+function updateActionLog(entry) {
+  const cardName = "TRPG - Action Log";
+  const existingIndex = storyCards.findIndex(card => card.title.toLowerCase() === cardName.toLowerCase() && card.type === TRPGCardType);
+  if (existingIndex < 0) {
+    addStoryCard("", entry, TRPGCardType, cardName, "")
+  } else {
+    updateStoryCard(existingIndex, "", entry, TRPGCardType, cardName, "")
+  }
+}
+
+// Where inputs is a dictionary of terms/keys to replace with it's data
+function actionInstructions(inputs, subject) {
+  const instructionCard = searchStoryCards({type: TRPGCardType, title: `TRPG - ${subject} Instructions`})
+  if (instructionCard.length <= 0) throw new Error(`Action Failed! ${subject} Instructions card does not exist!`)
+  let instructions = instructionCard[0].description
+  for (const key in inputs) {
+    instructions = instructions.replaceAll(key, inputs[key])
+  }
   return instructions
 }
 
@@ -362,8 +465,6 @@ function splitTryResult(outputText) {
 
 // Saves results block of try action to story cards for viewing (used in output.js)
 function saveActionResult(outputText) {
-  const cardName = "TRPG - Actions";
-
   // Check for divider
   if(!outputText.includes(divider) && !outputText.includes(backupDivider)) {
     return outputText
@@ -371,20 +472,25 @@ function saveActionResult(outputText) {
 
   // Split the output text into result and narrative
   const { resultBlock, narrativeText } = splitTryResult(outputText)
+  updateActionLog(resultBlock)
   log(resultBlock)
 
-  // Find existing TRPG - Actions card
-  const existingIndex = storyCards.findIndex(card => card.title.toLowerCase() === cardName.toLowerCase() && card.type === TRPGCardType);
-  if (existingIndex < 0) {
-    addStoryCard("", resultBlock, TRPGCardType, cardName, "")
-  } else {
-    updateStoryCard(existingIndex, "", resultBlock, TRPGCardType, cardName, "")
-  }
-
+  // Determine the success of the action
+  const actionSuccess = resultBlock.includes("SUCCESS")
+  
   // Update expGain and relevant skill progress
-  const expGain = resultBlock.includes("SUCCESS") ? state.TRPG.config.actionExp : state.TRPG.config.actionExp / 4
+  const expGain = actionSuccess ? state.TRPG.config.actionExp : state.TRPG.config.actionExp / 4
   const relevantSkills = (resultBlock.match(/^[ \t]*relevant skills:\s*(.*)$/im) || [,''])[1]
-  updateCharacter({name: state.TRPG.actor[InfoKeyword][NameKeyword], expGain: expGain, rskills: relevantSkills})
+  const obtainItems = (resultBlock.match(/^\s*Items Obtained:.*$/im) || [""])[0].split(':')[1].trim();
+  const removeItems = (resultBlock.match(/^\s*Items Removed:.*$/im) || [""])[0].split(':')[1].trim();
+  const updateVariables = {
+    name: state.TRPG.actor[InfoKeyword][NameKeyword],
+    expGain: relevantSkills ? expGain : 0,
+    rskills: relevantSkills,
+    obtainItems: obtainItems,
+    removeItems: removeItems
+  }
+  updateCharacter(updateVariables)
 
   return narrativeText
 }
@@ -394,23 +500,34 @@ function saveActionResult(outputText) {
 ///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////// CHARACTER /////////////////////////////////////////////////////////
 
-function characterTemplate({name = state.characterName || "You", title = "none", level = 1, exp = 0, skills = ""} = {}) {
-  return `Name: ${name}\nTitle: ${title}\nLevel: ${level}\nEXP: ${exp}\n${SkillsKeyword}: ${skills}`
+function characterTemplate({name = state.characterName || "You", title = "none", level = 1, exp = 0, skills = "", inventory = ""} = {}) {
+  return `${NameKeyword}: ${name}\n${TitleKeyword}: ${title}\n${LevelKeyword}: ${level}\n${EXPKeyword}: ${exp}\n${SkillsKeyword}: ${skills}\n${InvKeyword}: ${inventory}`
 }
 
-function skillsTemplate(skills) {
-  const skillsData = {}
-  const skillList = skills.split(',').map(s => s.trim()).filter(Boolean)
-  for (const s of skillList) {
+// Turns a string list "item(1), skill(2)" into a dict with key, level, and optional exp
+function listTemplateData(listString, includeEXP = false) {
+  const listData = {}
+  const dataArray = listString.split(',').map(s => s.trim()).filter(Boolean)
+  for (const s of dataArray) {
     const level = parseInt(s.match(intParenthesesRegex)?.[1] || 0, 10);
     const name = s.replace(intParenthesesRegex, '').trim();
-    skillsData[name] = { [LevelKeyword]: level, [EXPKeyword]: getExpForLevel(level-1)+1 };
+    listData[name] = { [LevelKeyword]: level };
+    if (includeEXP) listData[name][EXPKeyword] = getExpForLevel(level-1)+1
   }
-  return skillsData
+  return listData
+}
+
+// Turns a dict with key and level into string
+function listTemplateString(listData) {
+  const elements = []
+  for (const key in listData) {
+    elements.push(`${key}(${listData[key][LevelKeyword]})`)
+  }
+  return elements.join(", ")
 }
 
 // Smart update of character by applying exp gain to character level and relevant skills
-function updateCharacter({name = state.characterName || "You", expGain = 0, rskills = ""} = {}) {
+function updateCharacter({name = state.characterName || "You", expGain = 0, rskills = "", obtainItems = "", removeItems = ""} = {}) {
   const cardName = `${name} - ${InfoKeyword}`;
   let existingIndex = storyCards.findIndex(card => card.title.toLowerCase() === cardName.toLowerCase() && card.type === TRPGCardType)
 
@@ -458,12 +575,36 @@ function updateCharacter({name = state.characterName || "You", expGain = 0, rski
   }
   cardContent[SkillsKeyword] = infoSkills.join(", ")
 
+  // Inventory Management
+  const infoInventory = listTemplateData(cardContent[InvKeyword]) // Turns comma string into dict with name as key, level as field
+  const addItems = listTemplateData(obtainItems)
+  const rmvItems = listTemplateData(removeItems)
+  for (const item in addItems) {
+    const keys = Object.keys(infoInventory)
+    const lower = item.toLowerCase();
+    const existingKey = keys.find(k => k.toLowerCase() === lower);
+    if (existingKey) {
+      infoInventory[existingKey][LevelKeyword] += addItems[item][LevelKeyword]
+    } else {
+      infoInventory[lower] = addItems[item]
+    }
+  }
+  for (const item in rmvItems) {
+    const keys = Object.keys(infoInventory)
+    const index = keys.includes(item) ? item : keys.includes(item.toLowerCase()) ? item.toLowerCase() : ""
+    if (index) {
+      infoInventory[index][LevelKeyword] -= rmvItems[item][LevelKeyword]
+      if (infoInventory[index][LevelKeyword] <= 0) delete infoInventory[index]
+    }
+  }
+  cardContent[InvKeyword] = listTemplateString(infoInventory)
+
   // Finally apply the update
   updateStoryCard(existingIndex, storyCards[existingIndex].keys, json2card(cardContent), TRPGCardType, cardName, JSON.stringify(cardNotes, null, 2))
 }
 
 // Can be used to get, set, and/or create a character
-function getSetCharacter({name = state.characterName || "You", title = null, level = null, exp = null, skills = null, rskills = null} = {}) {
+function getSetCharacter({name = state.characterName || "You", title = null, level = null, exp = null, skills = null, rskills = null, inventory = null} = {}) {
   const cardName = `${name} - ${InfoKeyword}`;
   let existingIndex = storyCards.findIndex(card => card.title.toLowerCase() === cardName.toLowerCase() && card.type === TRPGCardType)
 
@@ -471,19 +612,20 @@ function getSetCharacter({name = state.characterName || "You", title = null, lev
   if (existingIndex < 0) {
     const cardConent = characterTemplate({name: name})
     const cardNotes = {}
-    cardNotes[SkillsKeyword] = skillsTemplate(skills || "")
+    cardNotes[SkillsKeyword] = listTemplateData(skills || "", true)
     existingIndex = addStoryCard("", cardConent, TRPGCardType, cardName, JSON.stringify(cardNotes, null, 2))-1
   }
 
   // Then update with the argument values, if not null
   const cardContent = card2json(storyCards[existingIndex].entry)
   const cardNotes = JSON.parse(storyCards[existingIndex].description)
-  if (name    != null) cardContent[NameKeyword]   = name
-  if (title   != null) cardContent[TitleKeyword]  = title
-  if (level   != null) cardContent[LevelKeyword]  = level
-  if (exp     != null) cardContent[EXPKeyword]    = exp
-  if (skills  != null) cardContent[SkillsKeyword] = skills
-  if (rskills != null) cardNotes[SkillsKeyword]   = rskills
+  if (name      != null) cardContent[NameKeyword]   = name
+  if (title     != null) cardContent[TitleKeyword]  = title
+  if (level     != null) cardContent[LevelKeyword]  = level
+  if (exp       != null) cardContent[EXPKeyword]    = exp
+  if (skills    != null) cardContent[SkillsKeyword] = skills
+  if (rskills   != null) cardNotes[SkillsKeyword]   = rskills
+  if (inventory != null) cardContent[InvKeyword]    = inventory
 
   // Validate cardContent levels -> exp to check if player has updated level values out of sync with exp
   const charLevel = cardContent[LevelKeyword]
@@ -492,7 +634,7 @@ function getSetCharacter({name = state.characterName || "You", title = null, lev
   }
 
   // Validate cardNotes levels -> skill exp to check if player has updated level values out of sync with exp
-  const infoSkills = skillsTemplate(cardContent[SkillsKeyword] || "")
+  const infoSkills = listTemplateData(cardContent[SkillsKeyword] || "", true)
   const skillData = cardNotes[SkillsKeyword] || {}
   for (const skill in infoSkills) {
     const keys = Object.keys(skillData)

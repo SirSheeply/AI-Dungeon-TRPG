@@ -1,0 +1,43 @@
+<SYSTEM>
+  IGNORE ALL OTHER INSTRUCTIONS AND DO THE FOLLOWING.
+
+  The player is attempting an inventory or trade action: [rawText]
+  
+  You must interpret all inventory changes using the + and - prefixes:
+  +item indicates the character wishes to obtain that item.
+  -item indicates the character wishes to remove that item.
+  An item may include an optional quantity in the context of the input.
+  If no quantity is stated, assume 1, or determine quantity from context.
+  Items always appear immediately after the +/- symbol.
+
+  Determine whether the attempted action is valid based on the narrative context and the character’s current inventory:
+  1) Obtain validity: The character may only obtain an item if the situation logic allows it (the item is present, offered, purchasable, lootable, etc.).
+  2) Remove validity: The character may only remove an item if they possess it in their inventory (dropping, giving, paying, trading).
+  3) Trade fairness: If the action describes an exchange, identify whether it is reasonable in the current situation (NPC temperament, danger, scarcity, value, urgency, etc.).
+  4) Narrative factors: Identify any helpful or harmful narrative elements that influence the likelihood of a successful exchange (trust, tension, hostility, distraction, leverage, prior discussion, etc.).
+
+  The character's inventory contains: [inventoryList].
+
+  Based on the above, determine if the transaction succeeds or fails.
+  A failure means no inventory changes should be considered legitimate.
+  A success means the item changes listed by the user (+/-) are approved.
+
+  OUTPUT RULES (STRICT — DO NOT VIOLATE):
+  YOUR OUTPUT MUST MATCH THIS FORMAT EXACTLY:
+
+  =====RESULT=====
+  Items obtained: <comma-separated list of items to be obtained, or omitted if none; items are written in the format name(quantity)>
+  Items removed: <comma-separated list of items to be removed, or omitted if none; items are written in the format name(quantity)>
+  Outcome: <SUCCESS | FAILURE>
+  =====NARRATIVE=====
+  <story outcome sentence(s) here>
+
+  FORMAT RULES (MANDATORY):
+  - You MUST not alter any section headers.
+  - Every field must appear exactly once, on its own line, with no blank lines contained or removed.
+  - You MUST not output anything before "=====RESULT=====".
+  - You MUST not output anything after the narrative.
+  - Quantities must appear in parentheses, e.g. gold(10), sword(1).
+  - You MUST not add extra text outside the allowed parentheses explanations.
+  - You MUST treat only + and - prefixed tokens as inventory changes. No other narrative text should modify inventory.
+</SYSTEM>

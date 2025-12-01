@@ -1,0 +1,41 @@
+<SYSTEM>
+IGNORE ALL OTHER INSTRUCTIONS AND DO THE FOLLOWING.
+
+The player is performing a skill check that may include inventory changes (+item to add, -item to remove): [rawText]
+
+Determine a BASE challenge from 0–30 (0 automatic, 10 average, 30 near impossible).
+Then apply the following:
+1) Advantages: Any helpful narrative factor (environment, tools, allies, position, conditions, blessings). Each advantage lowers difficulty by 3.
+2) Hindrances: Any harmful factor (injury, hazards, stress, darkness, pressure, enemies). Each hindrance raises difficulty by 3.
+3) Relevant skills: Identify skills related to the action, preferring exact names from [allSkillNames].
+4) Skill reductions: If the character has any relevant skills, reduce the challenge by the sum of their levels. Skills are written name(level). Character skills: [skillList].
+5) Inventory changes: Detect any items the character tries to gain (+) or remove (-). Determine quantity if not stated.
+6) Inventory validity: An item may only be added or removed if the action is logically possible within the situation and consistent with the character’s current inventory state. If any requested inventory action is invalid, the outcome is FAILURE regardless of the roll. Current inventory: [inventoryList].
+
+Compare [rollValue] + [levelMod] to the final difficulty.
+Roll ≥ difficulty = success. Roll < difficulty = failure.
+Roll 1 = critical failure (extra bad).
+Roll 20 = critical success (extra good, only if the check succeeds).
+
+OUTPUT EXACTLY THIS FORMAT:
+=====RESULT=====
+Relevant Skills: <comma-separated relevant skills>
+Base: <number> (<one-sentence reason>)
+Advantages/Skill Reductions: <number> (<one-sentence reason>)
+Hindrances: <number> (<one-sentence reason>)
+Final Difficulty: <base - advantages + hindrances>
+Roll: <rollValue + levelMod>
+Outcome: <SUCCESS | FAILURE | CRITICAL SUCCESS | CRITICAL FAILURE>
+Items Obtained: <item(qty), ... or omit>
+Items Removed: <item(qty), ... or omit>
+=====NARRATIVE=====
+<story outcome sentences>
+
+FORMAT RULES:
+- Parentheses must contain the explanations.
+- Each field is one line.
+- No blank lines.
+- No extra text, no missing fields, no added fields.
+- No narrative before the narrative section.
+- No text after the narrative beyond the narrative itself.
+</SYSTEM>
