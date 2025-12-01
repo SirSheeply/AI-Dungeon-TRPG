@@ -21,7 +21,6 @@ const LevelKeyword = "Level"
 const TitleKeyword = "Title"
 const EXPKeyword = "EXP"
 const InvKeyword = "Inventory"
-const TryKeyword = "Try"
 
 // Regex                   
 const hasCommandRegex = /(?:^|\s)[#\+\-][^\s]+/;          // Check if there's a # or - or + at the start of any word (not mid-word)
@@ -67,7 +66,7 @@ function enforceConfig() {
     try {
       const newSettings = JSON.parse(storyCards[configCardIndex].description)
       Object.keys(state.TRPG.config).forEach(key => { state.TRPG.config[key] = validateType(newSettings[key], state.TRPG.config[key]) });
-      updateStoryCard(configCardIndex, "", configHelp, TRPGCardType, configTitle, JSON.stringify(state.TRPG.config[key], null, 2))
+      updateStoryCard(configCardIndex, "", configHelp, TRPGCardType, configTitle, JSON.stringify(state.TRPG.config, null, 2))
     } catch (error) {
       updateStoryCard(configCardIndex, "", configHelp, TRPGCardType, configTitle, JSON.stringify(state.TRPG.config, null, 2))
     }
@@ -79,7 +78,7 @@ function enforceConfig() {
 function validateType(value, expectedValue) {
   if (typeof value !== typeof expectedValue) {
     if (typeof expectedValue === "boolean") {
-      return Boolean(value) || expectedValue;
+      return Boolean(value) ?? expectedValue;
     }
     if (typeof expectedValue === "number" && !isNaN(value)) {
       return Number(value) || expectedValue;
@@ -121,18 +120,14 @@ function getRandomFloat(min, max) {
 ///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////// COMMANDS REGISTRY /////////////////////////////////////////////////////
 
-function commandRegistry(commandName, rawText) {
+function commandRegistry(commandName) {
   const registry = [
     // <><> Core Commands
     { handler: doHelp,        helpText: doHelpHelp,        synonyms: ["help"]  },
     { handler: doReset,       helpText: doResetHelp,       synonyms: ["reset"]  },
 
-    // <><> Skills & Abilities
-    { handler: doTry,         helpText: doTryHelp,         synonyms: ["try", "attempt"] },
-    { handler: doCombo,       helpText: doComboHelp,       synonyms: [] }, // (Try + Inventory)
-
-    // <><> Inventory & Economy
-    { handler: doInventory,   helpText: doInventoryHelp,   synonyms: ["buy", "sell", "trade", "take", "drop"] },
+    // <><> AI Driven Commands
+    { handler: doAction,      helpText: doActionHelp,      synonyms: [] },
   ];
 
   // Return full registry if nothing is passed
@@ -144,34 +139,20 @@ function commandRegistry(commandName, rawText) {
     if (found) return found;
   }
 
-  // Smart detection based on symbols
-  const hasTrySymbol = rawText && /#\w+/.test(rawText);
-  const hasInventorySymbol = rawText && /[+-]\w+/.test(rawText);
-
-  if (hasTrySymbol && hasInventorySymbol) {
-    return registry.find(e => e.handler === doCombo);
-  } else if (hasInventorySymbol) {
-    return registry.find(e => e.handler === doInventory);
-  } else if (hasTrySymbol) {
-    return registry.find(e => e.handler === doTry);
-  }
-
   // Default fallback
-  return registry.find(e => e.handler === doTry);
+  return registry.find(e => e.handler === doAction);
 }
 
 function commandExtract(rawText) {
   // Extract command name
   const m = rawText.match(/#(\S+)/);
   const commandName = m ? m[1].toLowerCase().replace(/[^a-z0-9_]/g, "") : "";
-  const targetNames = rawText.match(/@(\S+)/);
 
   // Clean input (remove symbols)
   const cleanInput = rawText.replace(/(^|\s)[#@\+\-](?=\w)/g, '$1');
   
   return {
     commandName,    // #command referenced in input
-    targetNames,    // @targets referenced in input
     rawText,        // Raw unedit player input text
     cleanInput      // Input with no command symbols
   };
@@ -325,33 +306,9 @@ Usage: #reset\n`
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 ///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////// TRY COMMAND ////////////////////////////////////////////////////////
+////////////////////////////////////////////////////// ACTIONS COMMAND //////////////////////////////////////////////////////
 
-const doTryHelp = `<><> #try command
--- Performs a check by rolling 1d20 against an AI determined difficulty.
--- AI determines advantages and hinderences that may increase or reduce difficulty.
--- If the actor is not a character, no skill reductions are made, default actor is You.
--- EXP is gained for successful check (25% for failed attempt), amount can be configured (actionExp).
-Usage: Any text with #skillName or #try \n`
-
-function doTry(inputMaster) {
-  const config = state.TRPG.config
-  const character = state.TRPG.actor
-  // Pre-roll a dice value
-  const diceRoll = getRandomInteger(1, config.defaultCheckDice)
-  // Setup inputs for instructions
-  const inputs = {
-    skillList: character[InfoKeyword][SkillsKeyword],
-    rollValie: diceRoll,
-    levelMod: parseInt(character[InfoKeyword][LevelKeyword]),
-    allSkillsNames: Object.keys(character[DataKeyword][SkillsKeyword])
-  }
-  // Set the context and hope for the best
-  state.memory[config.memoryArea] = actionInstructions(inputs, TryKeyword)
-  return [inputMaster.cleanInput, true]
-}
-
-const doComboHelp = `<><> #try+inventory combo command
+const doActionHelp = `<><> AI Driven Action
 -- Performs a check by rolling 1d20 against an AI determined difficulty.
 -- Handles inventory actions such as: steal, throw, drop, and haggle.
 -- AI determines advantages and hinderences that may increase or reduce difficulty.
@@ -359,9 +316,9 @@ const doComboHelp = `<><> #try+inventory combo command
 -- EXP is gained for successful check (25% for failed attempt), amount can be configured (actionExp).
 -- The +plus symbol can be used to indicate items you wish to recieve.
 -- The -minus symbol can be used to indicate items you with to remove.
-Usage: Any text with #skillName or #try and the inclusion of +/- symbols\n`
+Usage: Any text containing #<word>\n`
 
-function doCombo(inputMaster) {
+function doAction(inputMaster) {
   const config = state.TRPG.config
   const character = state.TRPG.actor
   // Pre-roll a dice value
@@ -376,31 +333,7 @@ function doCombo(inputMaster) {
     rawText: inputMaster.rawText
   }
   // Set the context and hope for the best
-  state.memory[config.memoryArea] = actionInstructions(inputs, "Combo")
-  return [inputMaster.cleanInput, true]
-}
-
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
-///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////// INV COMMAND ////////////////////////////////////////////////////////
-
-const doInventoryHelp = `<><> #inventory command
--- Performs inventory actions such as: take, drop, buy, sell, and trade.
--- AI determines success of the action, based on quanity and narrative.
--- An inventory action may fail if you're physically unable, lack the items.
--- Narrative factors in trade negotiations may also impact the success.
--- If the actor is not a character, default actor is You.
--- The +plus symbol can be used to indicate items you wish to recieve.
--- The -minus symbol can be used to indicate items you with to remove.
-Usage: Use of the synonyms as #commands or symbolic format with +/-\n`
-
-function doInventory(inputMaster) {
-  const character = state.TRPG.actor
-  // Setup inputs for instructions
-  const inputs = {inventoryList: character[InfoKeyword][InvKeyword], rawText: inputMaster.rawText}
-  // Set the context and hope for the best
-  state.memory[state.TRPG.config.memoryArea] = actionInstructions(inputs, InvKeyword)
+  state.memory[config.memoryArea] = actionInstructions(inputs, "Action")
   return [inputMaster.cleanInput, true]
 }
 
@@ -480,7 +413,7 @@ function saveActionResult(outputText) {
   
   // Update expGain and relevant skill progress
   const expGain = actionSuccess ? state.TRPG.config.actionExp : state.TRPG.config.actionExp / 4
-  const relevantSkills = (resultBlock.match(/^[ \t]*relevant skills:\s*(.*)$/im) || [,''])[1]
+  const relevantSkills = (resultBlock.match(/^\s*relevant skills:.*$/im) || [""])[0].split(':')[1].trim();
   const obtainItems = (resultBlock.match(/^\s*Items Obtained:.*$/im) || [""])[0].split(':')[1].trim();
   const removeItems = (resultBlock.match(/^\s*Items Removed:.*$/im) || [""])[0].split(':')[1].trim();
   const updateVariables = {

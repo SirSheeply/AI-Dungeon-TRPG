@@ -30,11 +30,11 @@ function AIDungeonTRPG_input(text, stop=false) {
     let inputMaster = commandExtract(text)
 
     // Get commandEntry (defaults to doTry action)
-    const commandEntry = commandRegistry(inputMaster.commandName, inputMaster.rawText)
+    const commandEntry = commandRegistry(inputMaster.commandName)
 
     // Where showInput replaces input text, and showOutput controls output display
     let [showInput, showOutput] = commandEntry.handler(inputMaster)
-    text = inputMaster.cleanInput // Removes symbols
+    text = showInput // Removes symbols
     state.TRPG.showOutput = showOutput
 
   } catch (err) {

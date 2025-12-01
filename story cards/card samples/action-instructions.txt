@@ -1,7 +1,7 @@
 <SYSTEM>
 IGNORE ALL OTHER INSTRUCTIONS AND DO THE FOLLOWING.
 
-The player is performing a skill check that may include inventory changes (+item to add, -item to remove): [rawText]
+The player is performing an action that may include a skill check and/or inventory changes (+item to add, -item to remove): [rawText]
 
 Determine a BASE challenge from 0–30 (0 automatic, 10 average, 30 near impossible).
 Then apply the following:
