@@ -206,6 +206,28 @@ function json2card(jsonData) {
   return stringBuilder.trim()
 }
 
+// Turns a string list "item(1), skill(2)" into a dict with key, level, and optional exp
+function listTemplateData(listString, includeEXP = false) {
+  const listData = {}
+  const dataArray = listString.split(',').map(s => s.trim()).filter(Boolean)
+  for (const s of dataArray) {
+    const level = parseInt(s.match(intParenthesesRegex)?.[1] || 0, 10);
+    const name = s.replace(intParenthesesRegex, '').trim();
+    listData[name] = { [LevelKeyword]: level };
+    if (includeEXP) listData[name][EXPKeyword] = getExpForLevel(level-1)+1
+  }
+  return listData
+}
+
+// Turns a dict with key and level into string
+function listTemplateString(listData) {
+  const elements = []
+  for (const key in listData) {
+    elements.push(`${key}(${listData[key][LevelKeyword]})`)
+  }
+  return elements.join(", ")
+}
+
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 ///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
@@ -410,12 +432,13 @@ function saveActionResult(outputText) {
 
   // Determine the success of the action
   const actionSuccess = resultBlock.includes("SUCCESS")
+  const expMult = resultBlock.includes("CRITICAL SUCCESS") ? 4 : 1
   
   // Update expGain and relevant skill progress
-  const expGain = actionSuccess ? state.TRPG.config.actionExp : state.TRPG.config.actionExp / 4
-  const relevantSkills = (resultBlock.match(/^\s*relevant skills:.*$/im) || [""])[0].split(':')[1].trim();
-  const obtainItems = (resultBlock.match(/^\s*Items Obtained:.*$/im) || [""])[0].split(':')[1].trim();
-  const removeItems = (resultBlock.match(/^\s*Items Removed:.*$/im) || [""])[0].split(':')[1].trim();
+  const expGain = actionSuccess ? state.TRPG.config.actionExp * expMult : state.TRPG.config.actionExp / 4
+  const relevantSkills = extractAfterLabel(resultBlock, "relevant skills")
+  const obtainItems = extractAfterLabel(resultBlock, "items obtained")
+  const removeItems = extractAfterLabel(resultBlock, "items removed")
   const updateVariables = {
     name: state.TRPG.actor[InfoKeyword][NameKeyword],
     expGain: relevantSkills ? expGain : 0,
@@ -428,6 +451,14 @@ function saveActionResult(outputText) {
   return narrativeText
 }
 
+function extractAfterLabel(block, label) {
+  // [ \t]* matches only spaces and tabs, preventing it from jumping to the next line
+  // (.*) matches everything else on that specific line
+  const regex = new RegExp(`${label}\\s*:[ \t]*(.*)`, 'i');
+  const match = block.match(regex);
+  return match ? match[1].trim() : '';
+}
+
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 ///////////////////////////////////////////////////////////// | /////////////////////////////////////////////////////////////
@@ -435,28 +466,6 @@ function saveActionResult(outputText) {
 
 function characterTemplate({name = state.characterName || "You", title = "none", level = 1, exp = 0, skills = "", inventory = ""} = {}) {
   return `${NameKeyword}: ${name}\n${TitleKeyword}: ${title}\n${LevelKeyword}: ${level}\n${EXPKeyword}: ${exp}\n${SkillsKeyword}: ${skills}\n${InvKeyword}: ${inventory}`
-}
-
-// Turns a string list "item(1), skill(2)" into a dict with key, level, and optional exp
-function listTemplateData(listString, includeEXP = false) {
-  const listData = {}
-  const dataArray = listString.split(',').map(s => s.trim()).filter(Boolean)
-  for (const s of dataArray) {
-    const level = parseInt(s.match(intParenthesesRegex)?.[1] || 0, 10);
-    const name = s.replace(intParenthesesRegex, '').trim();
-    listData[name] = { [LevelKeyword]: level };
-    if (includeEXP) listData[name][EXPKeyword] = getExpForLevel(level-1)+1
-  }
-  return listData
-}
-
-// Turns a dict with key and level into string
-function listTemplateString(listData) {
-  const elements = []
-  for (const key in listData) {
-    elements.push(`${key}(${listData[key][LevelKeyword]})`)
-  }
-  return elements.join(", ")
 }
 
 // Smart update of character by applying exp gain to character level and relevant skills
